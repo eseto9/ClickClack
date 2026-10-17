@@ -230,13 +230,13 @@ const T = {
     { at: 0, mult: 1, name: '' }, { at: 15, mult: 2, name: 'WARM' }, { at: 35, mult: 3, name: 'HOT' },
     { at: 60, mult: 5, name: 'WILD' }, { at: 90, mult: 8, name: 'RIOT!' }],
   HAND: 5, KICKS: 2, KICK_MULT: 1.45, KICK_COYOTE: 0.25,
-  SETTLE_AFTER: 9, SETTLE_IDLE: 20, HARD_STOP: 8,
+  SETTLE_AFTER: 7, SETTLE_IDLE: 20, HARD_STOP: 6,
   STOP_HOLD: 0.45, AUTO_BANK: 5,
-  TARGET_BASE: 450, TARGET_GROWTH: 1.75, LATE_GROWTH: 1.08,
+  TARGET_BASE: 3500, TARGET_GROWTH: 1.3, LATE_GROWTH: 1.06,
   HARD_TARGET: 1.6, ASSIST_TARGET: 0.75, HARD_SCORE_BONUS: 0.5,
   BOSS_EVERY: 5, MAX_MARBLES: 48, CHARM_SLOTS: 4, ENG_SLOTS: 2, MAX_LVL: 5,
   ORB_CHANCE: 0.35, ORB_LIFE: 8,
-  SHARDS_PER_SCORE: 400, SHARDS_SCORE_CAP: 60,
+  SHARDS_PER_SCORE: 6000, SHARDS_SCORE_CAP: 60,
   DPR_CAP: 2,
   PARTICLES: [90, 200, 380],        // particle budget per quality level
 };
@@ -396,7 +396,7 @@ const PATHS = {
   calm:   { name: 'Calm Room',     icon: '☾', tmult: 0.7,  desc: 'Target −30%. No free powerup after.' },
   elite:  { name: 'Elite Room',    icon: '★', tmult: 1.5,  desc: 'Target +50%. Guaranteed powerup after, with better odds of rares.' },
   wild:   { name: 'Wild Room',     icon: '✦', tmult: 1,    desc: 'Random modifier. Points ×1.25, +5 coins.' },
-  boss:   { name: 'Boss Room',     icon: '☠', tmult: 1,    desc: 'No way around it.' },
+  boss:   { name: 'Boss Room',     icon: '☠', tmult: 1.35, desc: 'No way around it.' },
 };
 const BASE_POOL = { mats: ['steel', 'rubber'], engs: ['spark', 'bomb', 'magnet', 'gold', 'crown', 'seed', 'blackhole', 'split'], charms: ['wallstreet', 'tenth', 'bumpercrop', 'hotstart', 'bigbag', 'demolition', 'overcharge', 'lucky7'] };
 const ALL_POOL = { mats: ['steel', 'rubber', 'glass', 'ice', 'lead'], engs: Object.keys(ENGS), charms: Object.keys(CHARMS) };
@@ -463,8 +463,8 @@ const CHALLENGES = [
   { id: 'room4',    text: 'Clear room 4',                       reward: 15, check: r => r.stats.rooms >= 4 },
   { id: 'room7',    text: 'Clear room 7',                       reward: 25, check: r => r.stats.rooms >= 7 },
   { id: 'spare2',   text: 'Clear a room with 2+ marbles unused',reward: 15, check: r => r.stats.maxLeftover >= 2 },
-  { id: 'throw500', text: 'Score 500 with one marble',          reward: 15, check: r => r.stats.bestThrow >= 500 },
-  { id: 'throw2k',  text: 'Score 2,000 with one marble',        reward: 25, check: r => r.stats.bestThrow >= 2000 },
+  { id: 'throw500', text: 'Score 10,000 with one marble',       reward: 15, check: r => r.stats.bestThrow >= 10000 },
+  { id: 'throw2k',  text: 'Score 40,000 with one marble',       reward: 25, check: r => r.stats.bestThrow >= 40000 },
   { id: 'blocks15', text: 'Break 15 blocks',                    reward: 15, check: r => r.stats.blocks >= 15 },
   { id: 'near3',    text: 'Pull off 3 near-misses',             reward: 15, check: r => r.stats.near >= 3 },
   { id: 'golden',   text: 'Hit a golden orb',                   reward: 15, check: r => r.stats.golden >= 1 },
@@ -480,8 +480,8 @@ const ACHIEVEMENTS = [
   { id: 'room10',  name: 'Marble Master',    desc: 'Clear room 10.',                         reward: 40, check: r => r.stats.rooms >= 10 },
   { id: 'room15',  name: 'Unstoppable',      desc: 'Clear room 15.',                         reward: 80, check: r => r.stats.rooms >= 15 },
   { id: 'riot',    name: 'RIOT!',            desc: 'Push the Chaos Meter to ×8.',            reward: 25, check: r => r.stats.bestChaos >= 8 },
-  { id: 's10k',    name: 'Five Figures',     desc: 'Score 10,000 in one run.',               reward: 20, check: r => r.score >= 10000 },
-  { id: 's100k',   name: 'Six Figures',      desc: 'Score 100,000 in one run.',              reward: 60, check: r => r.score >= 100000 },
+  { id: 's10k',    name: 'Six Figures',      desc: 'Score 100,000 in one run.',              reward: 20, check: r => r.score >= 100000 },
+  { id: 's100k',   name: 'Millionaire',      desc: 'Score 1,000,000 in one run.',            reward: 60, check: r => r.score >= 1000000 },
   { id: 'kiss',    name: 'Kiss Shot',        desc: 'Hit a resting marble perfectly head-on.', reward: 30, secret: true, check: r => r.stats.kiss >= 1 },
   { id: 'clutch',  name: 'Clutch Player',    desc: 'Save a slowing marble with a hit.',      reward: 10, check: r => r.stats.clutch >= 1 },
   { id: 'gold5',   name: 'Gold Digger',      desc: 'Hit 5 golden orbs (all runs).',          reward: 20, check: (r, s) => s.golden >= 5 },
@@ -752,7 +752,7 @@ class Run {
   buildRoom(n) {
     const rr = this.rr, W = T.W, H = T.H, hard = !!this.cfg.hard;
     this.bumpers = []; this.blocks = []; this.holes = []; this.spikes = []; this.gates = [];
-    this.pads = []; this.vortexes = []; this.multis = []; this.stars = []; this.starsGot = 0; this.frenzy = 0; this.pendingMulti = [];
+    this.pads = []; this.vortexes = []; this.multis = []; this.stars = []; this.starsGot = 0; this.frenzy = 0; this.frenzyUsed = false; this.pendingMulti = [];
     this.boss = null; this.jugg = null; this.orb = null; this.orbPlan = null; this.mut = null;
     const isBoss = n % T.BOSS_EVERY === 0, late = n > 10;
     if (!isBoss && ((n >= 3 && rr.chance(hard ? 0.6 : 0.42)) || late || this.path === 'wild')) this.mut = rr.pick(Object.keys(MUTATORS));
@@ -785,7 +785,7 @@ class Run {
     // bosses claim their space first
     if (isBoss) {
       const kind = BOSS_ORDER[(n / T.BOSS_EVERY - 1) % BOSS_ORDER.length];
-      this.boss = { kind, atk: 0, warn: 0 };
+      this.boss = { kind, atk: 2.5, warn: 0 };   // first attack comes 4s after the first throw
       if (kind === 'warden') {
         const hp2 = 18 + n * 2, wy = rr.pick([H * 0.3, H * 0.5, H * 0.7]);
         this.boss.bp = { x: cx, y: wy, r: 30, hp: hp2, maxHp: hp2, flash: 0, warden: true, id: 'warden' };
@@ -835,7 +835,9 @@ class Run {
     const ng = n >= 2 && rr.chance(0.65) ? (rr.chance(0.35) ? 2 : 1) : 0;
     fill(ng, 36, addGate, gateAngle);
     // arcade pieces: boost pads, vortexes, multiball orbs and collectible stars
-    if (n >= 2) fill(rr.chance(0.55) ? 2 : 1, 26, (x, y, r, a) => this.pads.push({ x, y, w: 46, h: 26, a, c: Math.cos(a), s: Math.sin(a), id: 'pad' + this.pads.length }), () => rr.pick([-Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, 0, Math.PI, Math.PI / 2]));
+    // boost pads always point diagonally toward the middle of the board, so they can't pin a marble against a wall
+    const addPad = (x, y) => { const a = Math.atan2(cy - y, cx - x) + rr.pick([-0.55, -0.35, 0.35, 0.55]); this.pads.push({ x, y, w: 46, h: 26, a, c: Math.cos(a), s: Math.sin(a), id: 'pad' + this.pads.length }); };
+    if (n >= 2) fill(rr.chance(0.55) ? 2 : 1, 30, addPad);
     if (n >= 3 && rr.chance(0.45)) fill(1, 60, (x, y) => this.vortexes.push({ x, y, r: 62, id: 'vx' + this.vortexes.length }));
     if (n >= 2 && rr.chance(0.4)) fill(1, 18, (x, y) => this.multis.push({ x, y, r: 13, got: false }));
     fill(rr.int(3, 5), 14, (x, y) => this.stars.push({ x, y, r: 10, got: false }));
@@ -946,7 +948,7 @@ class Run {
       x, y, px: x, py: y, vx, vy, dx: 0, dy: -1, stopTick: -99999,
       alive: true, frozen: 0, charged: 0, kiss: false, bombHits: 0, bombed: false, cloned: false, fused: false,
       pin: 0, travel: 0, lastShot: false, throwId: -1, cd: new Map(), near: {}, sparkCd: 0, echoCd: 0, gateCd: 0, wallCd: 0,
-      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0, bhT: 0, bhDone: false, chargeMult: 2, vortT: 0, vortDone: false,
+      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0, bhT: 0, bhDone: false, chargeMult: 2, vortT: 0, vortDone: false, padUses: 0,
     };
   }
 
@@ -1067,7 +1069,8 @@ class Run {
       }
       for (const pd of this.pads) {   // boost pad: launches the marble along its arrows
         const dx = b.x - pd.x, dy = b.y - pd.y, lx = dx * pd.c + dy * pd.s, ly = -dx * pd.s + dy * pd.c;
-        if (Math.abs(lx) < pd.w / 2 && Math.abs(ly) < pd.h / 2 && this.cdOk(b, pd.id, 0.6)) {
+        if (Math.abs(lx) < pd.w / 2 && Math.abs(ly) < pd.h / 2 && b.padUses < 3 && this.cdOk(b, pd.id, 1.0)) {
+          b.padUses++;
           const sp2 = Math.sqrt(b.vx * b.vx + b.vy * b.vy), ns = Math.min(T.SPEED_CAP, Math.max(sp2 * 1.2, 720));
           b.vx = pd.c * ns; b.vy = pd.s * ns; b.moved = true;
           this.award(10 * this.valOf(b), b.x, b.y, 'bonus', b, null);
@@ -1199,7 +1202,8 @@ class Run {
     if (!bp.seed && !bp.lit) {
       bp.lit = true;
       const all = this.bumpers.filter(x => !x.seed && !x.warden);
-      if (all.length >= 2 && all.every(x => x.lit)) {
+      if (!this.frenzyUsed && all.length >= 3 && all.every(x => x.lit)) {
+        this.frenzyUsed = true;
         for (const x of all) x.lit = false;
         this.frenzy = 6; this.award(250, bp.x, bp.y, 'bonus', null, null, { label: 'ALL LIT!' }); this.emit('frenzy', { x: bp.x, y: bp.y });
       }
@@ -1482,7 +1486,7 @@ class Run {
     if (a) this.goldCheck(a); if (b) this.goldCheck(b);
     const tm = a || b;
     if (tm && tm.throwId >= 0 && tm.throwId < this.throwScores.length) { const v = (this.throwScores[tm.throwId] += pts); if (v > this.stats.bestThrow) this.stats.bestThrow = v; }
-    this.emit('pop', { x, y, pts, label: o.label || null, mult });
+    this.emit('pop', { x, y, pts, label: o.label || null, mult, cat });
     if (!this.cleared && this.roomScore >= this.target) { this.cleared = true; this.emit('cleared', { x, y }); }
     return pts;
   }
@@ -1686,10 +1690,10 @@ function computeLayout() {
   L.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, cap));
   L.colW = Math.min(vw - L.sal - L.sar, 560);
   L.colX = L.sal + (vw - L.sal - L.sar - L.colW) / 2;
-  L.hudTop = L.sat + 6; L.hudH = 116;
+  L.hudTop = L.sat + 6; L.hudH = 116; L.tickH = 38;
   L.trayH = 118;
   const trayBottom = vh - L.sab - 6;
-  const availTop = L.hudTop + L.hudH + 6, availH = trayBottom - L.trayH - availTop - 6;
+  const availTop = L.hudTop + L.hudH + L.tickH, availH = trayBottom - L.trayH - availTop - 6;
   const availW = L.colW - 20;
   L.s = Math.max(0.25, Math.min(availW / T.W, availH / T.H));
   L.aw = T.W * L.s; L.ah = T.H * L.s;
@@ -1922,16 +1926,16 @@ const FX = {
       g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(p.text, sx, sy); g.fillStyle = p.color; g.fillText(p.text, sx, sy);
     }
     g.globalAlpha = 1;
+    // Callouts live in the strip above the board (never on the table). A subtitle replaces the title halfway through.
     const b = this.banners[0];
-    if (b) {
-      const cx = L.ax + L.aw / 2, cy = L.ay + L.ah * 0.38;
-      const kin = clamp(b.t / 0.16, 0, 1), kout = clamp((b.dur - b.t) / 0.25, 0, 1);
-      const sc = SAVE.settings.reducedMotion ? 1 : (0.6 + 0.4 * (1 - Math.pow(1 - kin, 3))) * (kin < 1 ? 1.08 : 1);
-      g.save(); g.globalAlpha = Math.min(kin, kout); g.translate(cx, cy); g.scale(sc, sc);
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      let size = 46; g.font = font(900, size); const w = g.measureText(b.text).width; if (w > L.colW - 40) { size = Math.floor(size * (L.colW - 40) / w); g.font = font(900, size); }
-      g.lineWidth = 8; g.strokeStyle = 'rgba(0,0,0,.7)'; g.strokeText(b.text, 0, 0); g.fillStyle = b.color; g.fillText(b.text, 0, 0);
-      if (b.sub) { let ss = 18; g.font = font(800, ss); const sw = g.measureText(b.sub).width; if (sw > L.colW - 24) { ss = Math.max(13, Math.floor(ss * (L.colW - 24) / sw)); g.font = font(800, ss); } g.lineWidth = 5; g.strokeText(b.sub, 0, size * 0.5 + 16); g.fillStyle = '#fff'; g.fillText(b.sub, 0, size * 0.5 + 16); }
+    if (b && App.state === 'play') {
+      const cx = L.colX + L.colW / 2, cy = L.hudTop + L.hudH + L.tickH / 2 - 1, maxW = L.colW - 24;
+      const showSub = b.sub && b.t > b.dur * 0.5, txt2 = showSub ? b.sub : b.text;
+      const tIn = showSub ? b.t - b.dur * 0.5 : b.t, kin = clamp(tIn / 0.14, 0, 1), kout = clamp((b.dur - b.t) / 0.2, 0, 1);
+      const sc = SAVE.settings.reducedMotion ? 1 : 0.75 + 0.25 * (1 - Math.pow(1 - kin, 3));
+      g.save(); g.globalAlpha = Math.min(kin, kout); g.translate(cx, cy); g.scale(sc, sc); g.textAlign = 'center'; g.textBaseline = 'middle';
+      let size = showSub ? 18 : 27; g.font = font(900, size); const w = g.measureText(txt2).width; if (w > maxW) { size = Math.max(13, Math.floor(size * maxW / w)); g.font = font(900, size); }
+      g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.7)'; g.strokeText(txt2, 0, 0); g.fillStyle = showSub ? '#ffffff' : b.color; g.fillText(txt2, 0, 0);
       g.restore();
     }
   },
@@ -2191,7 +2195,7 @@ function drawHUD(g, run, t) {
   const cy = top + 102, lvl = run.chaosLvl, col = CHAOS_COL[lvl];
   const lab = run.frenzy > 0 ? 'FRENZY ×2' : '×' + run.chaosMult + (T.CHAOS_LEVELS[lvl].name ? ' ' + T.CHAOS_LEVELS[lvl].name : '');
   txt(g, lab, x0, cy, 18, col, 'left', 900, 4);
-  const mx0 = x0 + 104, mw = x1 - mx0;
+  const mx0 = x0 + 104, mw = x1 - mx0 - 84;
   g.fillStyle = 'rgba(0,0,0,.4)'; rrect(g, mx0, cy - 7, mw, 14, 7); g.fill();
   const cp = clamp(run.chaos / T.CHAOS_MAX, 0, 1);
   if (cp > 0) { g.fillStyle = lvl === 4 && !SAVE.settings.reducedMotion ? 'hsl(' + ((t * 140) % 360) + ',90%,66%)' : col; rrect(g, mx0, cy - 7, Math.max(14, mw * cp), 14, 7); g.fill(); }
@@ -2318,14 +2322,15 @@ function drawChaosFrame(g, run, t) {
 // fading trail of light, the room is lit briefly at the start, and the dark isn't total.
 const LightTrail = { pts: [], i: 0, n: 0, init() { for (let k = 0; k < 260; k++) this.pts.push({ x: 0, y: 0, life: 0 }); } };
 // Hit-combo counter in the board's top corner: grows and pulses as the chain builds.
+// Hit-combo counter at the right end of the Chaos row in the HUD: grows and pulses as the chain builds.
 function drawComboCounter(g, run, dtF) {
   if (run.phase !== 'play') { App.lastChain = 0; return; }
   if (run.chain !== App.lastChain) { if (run.chain > App.lastChain) App.chainPulse = 1; App.lastChain = run.chain; }
   App.chainPulse = Math.max(0, (App.chainPulse || 0) - dtF * 5);
-  if (run.chain < 5) return;
-  const size = Math.round(18 + Math.min(16, run.chain / 4) + App.chainPulse * 6), left = SAVE.settings.hand === 'left';
-  const x = left ? L.ax + L.aw - 12 : L.ax + 12, y = L.ay + 22;
-  txt(g, run.chain + ' HITS', x, y, size, CHAOS_COL[Math.max(1, run.chaosLvl)], left ? 'right' : 'left', 900, 5);
+  const x1 = L.colX + L.colW - 14, y = L.hudTop + 102;
+  if (run.chain < 2) { txt(g, '0 HITS', x1, y, 16, 'rgba(207,224,214,.45)', 'right', 900); return; }
+  const size = Math.round(16 + Math.min(6, run.chain / 10) + App.chainPulse * 4);
+  txt(g, run.chain + ' HITS', x1, y, size, CHAOS_COL[Math.max(1, run.chaosLvl)], 'right', 900, 4);
 }
 function drawFog(g, run, alpha) {
   if (!LightTrail.pts.length) LightTrail.init();
@@ -2413,8 +2418,8 @@ function handleEvents(run, quiet) {
           for (let i = 0; i < 5; i++) FX.burst(T.W * (i + 0.5) / 5, 24, 18, 260, cols[i], 2, 3, 1.8, 420);
           if (snd) Sound.golden(); if (hap) hap.play(HAPTIC.clear);
         }
-        if (e.label) FX.pop(e.x, e.y, e.label + (e.label.indexOf('+') < 0 ? ' +' + fmt(e.pts) : ''), '#ffffff', 21, 1.1);
-        else if (e.pts >= 12) FX.pop(e.x, e.y, '+' + fmt(e.pts), CHAOS_COL[run.chaosLvl], e.pts >= 300 ? 23 : e.pts >= 80 ? 19 : 16, 0.75);
+        if (e.label) { if (!quiet) FX.banner(e.label + (e.label.indexOf('+') < 0 ? ' +' + fmt(e.pts) : ''), '', '#ffffff', 0.9, 1); FX.pop(e.x, e.y, '+' + fmt(e.pts), '#ffffff', 16, 0.7); }
+        else if (e.pts >= 12 || e.cat === 'bumpers') FX.pop(e.x, e.y, '+' + fmt(e.pts), e.cat === 'bumpers' ? '#ffe9a8' : CHAOS_COL[run.chaosLvl], e.pts >= 1000 ? 19 : 15, 0.7);
         break;
       case 'clack': {
         const v = e.v;
@@ -2424,7 +2429,7 @@ function handleEvents(run, quiet) {
         if (hap && v > 350) hap.play(HAPTIC.hit);
         if (!quiet) {
           const now = App.time; App.clacks.push(now); while (App.clacks.length && now - App.clacks[0] > 0.45) App.clacks.shift();
-          if (App.clacks.length >= 5 && now - App.lastPile > 2.5) { App.lastPile = now; FX.pop(e.x, e.y - 14, 'PILEUP!', '#ff9f1c', 24, 1); }
+          if (App.clacks.length >= 5 && now - App.lastPile > 2.5) { App.lastPile = now; FX.banner('PILEUP!', '', '#ff9f1c', 0.9, 1); }
         }
         break;
       }
@@ -2485,13 +2490,13 @@ function handleEvents(run, quiet) {
         if (!quiet && !SAVE.combos[e.id]) { SAVE.combos[e.id] = todayStr(); FX.banner('NEW COMBO!', e.name + ' discovered', '#c77dff', 1.8, 3); }
         FX.ring(e.x, e.y, 6, 50, 0.45, '#c77dff', 4); if (snd) Sound.kiss(); if (hap) hap.play(HAPTIC.pickup); break;
       case 'singularity': FX.ring(e.x, e.y, 90, 8, 0.6, '#c77dff', 4); if (snd) Sound.frost(); break;
-      case 'bossWarn': if (!quiet) { FX.pop(e.x, e.y - 30, e.kind === 'glutton' ? 'HUNGRY…' : e.kind === 'crusher' ? 'RUMBLE…' : '!', '#ff5d73', 24, 1.1); } if (snd) Sound.deny(); if (hap) hap.play([20, 60, 20]); break;
+      case 'bossWarn': if (!quiet) { FX.banner(e.kind === 'glutton' ? 'THE GLUTTON IS HUNGRY…' : e.kind === 'crusher' ? 'THE WALLS RUMBLE…' : e.kind === 'juggernaut' ? 'JUGGERNAUT WINDS UP…' : 'SHOCKWAVE INCOMING!', '', '#ff5d73', 1.2, 2); } if (snd) Sound.deny(); if (hap) hap.play([20, 60, 20]); break;
       case 'bossAttack':
         FX.addShake(e.kind === 'crusher' ? 10 : 7);
         if (e.kind === 'warden') FX.ring(e.x, e.y, 20, e.r, 0.5, '#ff5d73', 6);
         if (e.kind === 'crusher') FX.addFlash(0.25, '#ff5d73');
-        if (e.kind === 'juggernaut' && !quiet) FX.pop(e.x, e.y - 26, 'CHARGE!', '#ff5d73', 24, 1);
-        if (e.kind === 'glutton' && !quiet) FX.pop(e.x, e.y - 26, e.eaten ? 'GULP! −1 marble' : 'MISSED!', '#ff5d73', 22, 1.3);
+        if (e.kind === 'juggernaut' && !quiet) FX.banner('CHARGE!', '', '#ff5d73', 1, 2);
+        if (e.kind === 'glutton' && !quiet) FX.banner(e.eaten ? 'GULP! It ate a marble from your hand' : 'MISSED! Your hand was too small to eat', '', '#ff5d73', 1.4, 2);
         if (snd) Sound.boom(false); if (hap) hap.play(HAPTIC.boom); break;
       case 'roomEnd': App.ff = false; if (!quiet) App.onRoomEnd(); break;
       case 'over': if (!quiet) App.onRunOver(); break;
@@ -2521,7 +2526,7 @@ const UI = {
     this.pauseBtn.style.right = left ? 'auto' : (L.vw - L.colX - L.colW + 8) + 'px';
     this.bankBtn.style.top = (L.trayY + 54) + 'px';
     this.ffBtn.style.top = (L.trayY + 54) + 'px';
-    this.toasts.style.top = (L.ay + 10) + 'px';
+    this.toasts.style.top = (L.sat + 6) + 'px';
   },
   frame() {
     const run = App.run;
