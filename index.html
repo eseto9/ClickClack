@@ -122,9 +122,12 @@ p,.txt{font-size:17px;line-height:1.35}
 .tile.view{pointer-events:none}
 
 /* shop items */
-.shopitem{display:flex;align-items:center;gap:12px;background:var(--panel);border-radius:16px;padding:10px;min-height:84px}
+.shopitem{display:flex;align-items:center;gap:10px;background:var(--panel);border-radius:14px;padding:8px 10px;min-height:64px}
+.col.tight{gap:8px}
+.snm{font-weight:900;font-size:17px;line-height:1.15}
+.sds{font-size:16px;color:var(--muted);line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .shopitem .grow{flex:1;min-width:0}
-.shopitem .btn{min-width:88px}
+.shopitem .btn{min-width:80px;flex:0 0 auto}
 .shopitem.sold{opacity:.4}
 
 /* tabs */
@@ -198,7 +201,7 @@ p,.txt{font-size:17px;line-height:1.35}
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 4;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 5;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -367,7 +370,7 @@ const MUTATORS = {
   slick:     { name: 'SLICK FLOOR',  desc: 'Marbles glide further.' },
   sticky:    { name: 'STICKY FLOOR', desc: 'Slow floor, but all points ×1.5.' },
   bouncy:    { name: 'SUPER WALLS',  desc: 'Walls bounce back at full speed.' },
-  blackout:  { name: 'BLACKOUT',     desc: 'Lights out. Only marbles glow.' },
+  blackout:  { name: 'BLACKOUT',     desc: 'Lights out. Marbles leave trails of light.' },
   goldfever: { name: 'GOLD FEVER',   desc: 'Golden orb guaranteed. Coins ×2.' },
   crowded:   { name: 'BUMPER PARTY', desc: 'Extra bumpers everywhere.' },
 };
@@ -651,6 +654,8 @@ const Sound = (() => {
    A Run is a pure function of (config, recorded actions). It never reads
    the clock, the DOM or Math.random, so recorded runs replay exactly:
    that powers ghosts, daily seeds and (later) server-side validation. */
+// The shop opens after rooms 2, 5, 8, 11...
+function isShopRoom(n) { return n % 3 === 2; }
 function computeTarget(n, cfg) {
   let t = T.TARGET_BASE * Math.pow(T.TARGET_GROWTH, n - 1);
   if (n > 10) t *= Math.pow(T.LATE_GROWTH, n - 10);   // late-game soft cap pressure
@@ -802,14 +807,14 @@ class Run {
       }
       case 'bank': if (!this.canBank()) return false; this.endRoom(true); return true;
       case 'card': return this.pickCard(a.i);
-      case 'skip': if (this.phase !== 'reward') return false; this.coins += 3; this.toShop(); return true;
+      case 'skip': if (this.phase !== 'reward') return false; this.coins += 3; this.phase = 'next'; return true;
       case 'target': return this.pickTarget(a.i);
       case 'cancel':
         if (this.phase !== 'pick' || !this.pending || this.pending.from !== 'shop') return false;
         this.coins += this.pending.cost; this.shop.items[this.pending.slot].sold = false; this.pending = null; this.phase = 'shop'; return true;
       case 'buy': return this.buy(a.i);
       case 'reroll': if (this.phase !== 'shop' || this.coins < this.shop.reroll) return false; this.coins -= this.shop.reroll; this.shop.reroll++; this.genShopItems(); return true;
-      case 'leave': if (this.phase !== 'shop') return false; this.startRoom(this.roomIdx + 1); return true;
+      case 'leave': if (this.phase !== 'shop' && this.phase !== 'next') return false; this.startRoom(this.roomIdx + 1); return true;
     }
     return false;
   }
@@ -1328,9 +1333,13 @@ class Run {
     this.coins += coins; this.stats.rooms++;
     if (left > this.stats.maxLeftover) this.stats.maxLeftover = left;
     if (this.throws === 1) this.stats.oneMarble++;
-    this.lastClear = { room: this.roomIdx, coins, overkill, left, leftBonus, score: this.roomScore, target: this.target, boss: !!this.boss };
-    this.phase = 'reward';
-    this.offer = this.genCards();
+    // Between rooms: the shop opens every third room; otherwise there's sometimes a free powerup.
+    const shopRoom = isShopRoom(this.roomIdx);
+    const freePick = !shopRoom && (this.roomIdx === 1 || !!this.boss || this.rng.chance(0.4));
+    this.lastClear = { room: this.roomIdx, coins, overkill, left, leftBonus, score: this.roomScore, target: this.target, boss: !!this.boss, stop: shopRoom ? 'shop' : freePick ? 'reward' : 'next' };
+    if (shopRoom) this.toShop();
+    else if (freePick) { this.phase = 'reward'; this.offer = this.genCards(); }
+    else this.phase = 'next';
     this.emit('roomEnd', this.lastClear);
   }
   finish() {
@@ -1365,8 +1374,8 @@ class Run {
   pickCard(i) {
     if (this.phase !== 'reward' || !this.offer || !this.offer[i]) return false;
     const c = this.offer[i];
-    if (c.kind === 'newMarble') { this.bag.push(this.newMarble(c.mat, c.eng.slice(), 1)); this.toShop(); }
-    else if (c.kind === 'charm') { this.charms.push(c.charm); this.toShop(); }
+    if (c.kind === 'newMarble') { this.bag.push(this.newMarble(c.mat, c.eng.slice(), 1)); this.phase = 'next'; }
+    else if (c.kind === 'charm') { this.charms.push(c.charm); this.phase = 'next'; }
     else { this.pending = { from: 'reward', card: c }; this.phase = 'pick'; }
     return true;
   }
@@ -1386,7 +1395,7 @@ class Run {
     else if (c.kind === 'polish') m.lvl++;
     else if (c.kind === 'remove') this.bag.splice(i, 1);
     const from = this.pending.from; this.pending = null;
-    if (from === 'reward') this.toShop(); else this.phase = 'shop';
+    this.phase = from === 'reward' ? 'next' : 'shop';
     return true;
   }
   toShop() { this.shop = { reroll: 2, items: [] }; this.genShopItems(); this.phase = 'shop'; }
@@ -1723,7 +1732,7 @@ const FX = {
       g.textAlign = 'center'; g.textBaseline = 'middle';
       let size = 46; g.font = font(900, size); const w = g.measureText(b.text).width; if (w > L.colW - 40) { size = Math.floor(size * (L.colW - 40) / w); g.font = font(900, size); }
       g.lineWidth = 8; g.strokeStyle = 'rgba(0,0,0,.7)'; g.strokeText(b.text, 0, 0); g.fillStyle = b.color; g.fillText(b.text, 0, 0);
-      if (b.sub) { g.font = font(800, 18); g.lineWidth = 5; g.strokeText(b.sub, 0, size * 0.5 + 16); g.fillStyle = '#fff'; g.fillText(b.sub, 0, size * 0.5 + 16); }
+      if (b.sub) { let ss = 18; g.font = font(800, ss); const sw = g.measureText(b.sub).width; if (sw > L.colW - 24) { ss = Math.max(13, Math.floor(ss * (L.colW - 24) / sw)); g.font = font(800, ss); } g.lineWidth = 5; g.strokeText(b.sub, 0, size * 0.5 + 16); g.fillStyle = '#fff'; g.fillText(b.sub, 0, size * 0.5 + 16); }
       g.restore();
     }
   },
@@ -1932,41 +1941,78 @@ function drawHUD(g, run, t) {
   g.fillStyle = 'rgba(0,0,0,.55)';
   for (let i = 1; i < T.CHAOS_LEVELS.length; i++) g.fillRect(mx0 + mw * T.CHAOS_LEVELS[i].at / T.CHAOS_MAX - 1, cy - 7, 2, 14);
 }
-// Hand marbles in the tray: tap one to throw it next.
+// Tray under the board: your bag, the hand drawn from it (tap one to throw it next),
+// a line describing the selected marble, and the kick counter.
+const TRAY_BAG_W = 60;
 function trayLayout(run) {
-  const maxShow = Math.max(1, Math.min(7, Math.floor((L.colW - 20) / 50))), shown = Math.min(run.hand.length, maxShow), sp = 50;
-  return { maxShow, shown, sp, y: L.trayY + 30, startX: L.colX + L.colW / 2 - (shown - 1) * sp / 2 };
+  const x0 = L.colX + TRAY_BAG_W, x1 = L.colX + L.colW - 8, sp = 50;
+  const maxShow = Math.max(1, Math.min(7, Math.floor((x1 - x0) / sp))), shown = Math.min(run.hand.length, maxShow);
+  return { maxShow, shown, sp, y: L.trayY + 28, startX: (x0 + x1) / 2 - (shown - 1) * sp / 2, bagX: L.colX + 30 };
 }
 function traySlotAt(run, px, py) {
   const tl = trayLayout(run);
-  if (Math.abs(py - tl.y) > 30) return -1;
+  if (Math.abs(py - tl.y) > 26) return -1;
   for (let i = 0; i < tl.shown; i++) if (Math.abs(px - (tl.startX + i * tl.sp)) <= tl.sp / 2) return i;
   return -1;
 }
+function marbleLine(m) {
+  return MATS[m.mat].name + (m.lvl > 1 ? ' LV' + m.lvl : '') + ' \u00B7 ' + (m.eng.length ? m.eng.map(e => ENGS[e].name).join(' + ') : 'no upgrades');
+}
+function marbleDetails(m) {
+  const parts = ['<b>' + esc(MATS[m.mat].name) + (m.lvl > 1 ? ' LV' + m.lvl : '') + '</b>: ' + esc(MATS[m.mat].desc)];
+  for (const e of m.eng) parts.push('<b>' + esc(ENGS[e].name) + '</b>: ' + esc(ENGS[e].desc));
+  if (!m.eng.length) parts.push('No engravings yet.');
+  return parts.join('<br>');
+}
+function drawBagIcon(g, x, y, count) {
+  g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.ellipse(x, y + 19, 15, 4, 0, 0, TAU); g.fill();
+  g.fillStyle = '#8a5d36'; g.beginPath(); g.moveTo(x - 11, y - 6); g.quadraticCurveTo(x - 22, y + 18, x, y + 18); g.quadraticCurveTo(x + 22, y + 18, x + 11, y - 6); g.closePath(); g.fill();
+  g.fillStyle = '#6a4424'; g.beginPath(); g.moveTo(x - 9, y - 7); g.lineTo(x - 13, y - 15); g.lineTo(x, y - 11); g.lineTo(x + 13, y - 15); g.lineTo(x + 9, y - 7); g.closePath(); g.fill();
+  g.strokeStyle = '#ffd166'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x - 10, y - 6); g.lineTo(x + 10, y - 6); g.stroke();
+  txt(g, String(count), x, y + 7, 17, '#fff', 'center', 900, 3);
+}
 function drawTray(g, run, t) {
   const y0 = L.trayY, cx = L.colX + L.colW / 2, n = run.hand.length;
-  const showBank = !UI.bankHidden;
+  const showBank = !UI.bankHidden, tl = trayLayout(run);
+  drawBagIcon(g, tl.bagX, tl.y, run.bag.length);
+  const dealT = run.roomTick * T.STEP, dealing = run.throws === 0 && dealT < 1.4;
   if (n > 0) {
-    const tl = trayLayout(run), maxShow = tl.maxShow, shown = tl.shown, sp = tl.sp, R0 = 17, startX = tl.startX;
+    const { maxShow, shown, sp, startX } = tl, R0 = 17;
     for (let i = 0; i < shown; i++) {
-      const m = run.hand[i], R = i === 0 ? 21 : R0, x = startX + i * sp, y = y0 + 30;
-      if (i === 0) { g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, R + 5, 0, TAU); g.stroke(); }
-      drawMarble(g, x, y, R, R * L.dpr, m.mat, m.eng, 0, i === 0 ? 1 : 0.85);
+      const m = run.hand[i], R = i === 0 ? 21 : R0;
+      let x = startX + i * sp, y = tl.y, a = i === 0 ? 1 : 0.85;
+      if (dealing) {   // the hand is dealt out of the bag at the start of each room
+        const k = clamp((dealT - 0.15 - i * 0.09) / 0.3, 0, 1);
+        if (k <= 0) continue;
+        const e = 1 - Math.pow(1 - k, 3);
+        x = lerp(tl.bagX, x, e); y = lerp(tl.y, y, e) - Math.sin(k * Math.PI) * 16;
+      }
+      if (i === 0) { g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, R + 5, 0, TAU); g.stroke(); }
+      drawMarble(g, x, y, R, R * L.dpr, m.mat, m.eng, 0, a);
     }
-    if (n > maxShow) txt(g, '+' + (n - maxShow), startX + shown * sp - 10, y0 + 30, 16, '#cfe0d6', 'left', 900);
+    if (n > maxShow) txt(g, '+' + (n - maxShow), startX + shown * sp - 10, tl.y, 16, '#cfe0d6', 'left', 900);
   } else {
-    txt(g, run.cleared ? 'Target met ✓' : 'Settling…', cx, y0 + 30, 18, run.cleared ? '#8be28b' : '#cfe0d6', 'center', 900);
+    txt(g, run.cleared ? 'Target met \u2713' : 'Settling\u2026', (L.colX + TRAY_BAG_W + L.colX + L.colW) / 2, tl.y, 18, run.cleared ? '#8be28b' : '#cfe0d6', 'center', 900);
   }
-  if (!showBank) {
-    const ky = y0 + 78; const kk = run.kicks;
-    const label = 'TAP = KICK';
-    g.font = font(900, 16); const lw = g.measureText(label).width;
-    const total = lw + 12 + Math.max(1, kk) * 16;
-    let x = cx - total / 2;
-    txt(g, label, x, ky, 16, kk > 0 ? '#e9f2ed' : '#7d8f86', 'left', 900); x += lw + 14;
-    for (let i = 0; i < kk; i++) { g.fillStyle = '#4cc9f0'; circle(g, x + i * 16 + 5, ky, 5.5); }
-    if (kk === 0) txt(g, '—', x, ky, 16, '#7d8f86', 'left', 900);
+  if (showBank) return;
+  // info line: how the hand was drawn, then what the selected marble does
+  let info, col = '#e9f2ed';
+  if (run.throws === 0 && dealT < 3 && run.handSize < run.bag.length) { info = 'Drew ' + run.handSize + ' of your ' + run.bag.length + ' marbles at random'; col = '#ffd166'; }
+  else if (run.throws === 0 && dealT < 3) { info = 'Your whole bag this room (' + run.handSize + ')'; col = '#ffd166'; }
+  else if (n > 0) info = 'NEXT \u25B8 ' + marbleLine(run.hand[0]);
+  if (info) {
+    g.font = font(900, 16); const maxW = L.colW - 20;
+    while (g.measureText(info).width > maxW && info.length > 8) info = info.slice(0, -2);
+    if (g.measureText(info).width > maxW || info !== info.trim()) {}
+    txt(g, info, cx, y0 + 62, 16, col, 'center', 900, 3);
   }
+  const ky = y0 + 92, kk = run.kicks, label = 'TAP = KICK';
+  g.font = font(900, 16); const lw = g.measureText(label).width;
+  const total = lw + 12 + Math.max(1, kk) * 16;
+  let x = cx - total / 2;
+  txt(g, label, x, ky, 16, kk > 0 ? '#e9f2ed' : '#7d8f86', 'left', 900); x += lw + 14;
+  for (let i = 0; i < kk; i++) { g.fillStyle = '#4cc9f0'; circle(g, x + i * 16 + 5, ky, 5.5); }
+  if (kk === 0) txt(g, '\u2014', x, ky, 16, '#7d8f86', 'left', 900);
 }
 function drawTutorial(g, run, t) {
   if (run.phase !== 'play') return;
@@ -2011,18 +2057,33 @@ function drawChaosFrame(g, run, t) {
     g.fillStyle = grd; g.fillRect(0, 0, L.vw, L.vh);
   }
 }
+// Blackout: a dark layer with light cut out around marbles. Moving marbles leave a
+// fading trail of light, the room is lit briefly at the start, and the dark isn't total.
+const LightTrail = { pts: [], i: 0, n: 0, init() { for (let k = 0; k < 260; k++) this.pts.push({ x: 0, y: 0, life: 0 }); } };
 function drawFog(g, run, alpha) {
+  if (!LightTrail.pts.length) LightTrail.init();
   const f = fogC.getContext('2d'), d = L.dpr, s = L.s;
-  f.setTransform(1, 0, 0, 1, 0, 0); f.globalCompositeOperation = 'source-over';
-  f.fillStyle = 'rgba(2,6,5,.93)'; f.fillRect(0, 0, fogC.width, fogC.height);
+  const reveal = clamp((run.roomTick * T.STEP - 1.6) / 1.4, 0, 1);   // lights fade out over the first 3 seconds
+  f.setTransform(1, 0, 0, 1, 0, 0); f.globalCompositeOperation = 'source-over'; f.clearRect(0, 0, fogC.width, fogC.height);
+  if (reveal <= 0) return;
+  f.fillStyle = 'rgba(2,6,5,' + (0.82 * reveal).toFixed(3) + ')'; f.fillRect(0, 0, fogC.width, fogC.height);
   f.globalCompositeOperation = 'destination-out';
   const light = glowSprite('rgba(255,255,255,1)');
   const hole = (x, y, r) => f.drawImage(light, (x - r) * s * d, (y - r) * s * d, r * 2 * s * d, r * 2 * s * d);
-  for (const b of run.marbles) if (b.alive) { const x = b.px + (b.x - b.px) * alpha, y = b.py + (b.y - b.py) * alpha; hole(x, y, 75); }
-  if (Input.pid !== null || Input.keyShowT > 0) hole(Input.lx, Input.ly, 60);
-  if (run.orb) hole(run.orb.x, run.orb.y, 40);
-  for (const h of run.holes) hole(h.x, h.y, 34);
-  for (const sp of run.spikes) hole(sp.x, sp.y, 30);
+  // drop a light crumb behind each moving marble every few frames; crumbs fade over ~2.5 s
+  const add = (LightTrail.n++ % 3) === 0;
+  for (const b of run.marbles) {
+    if (!b.alive) continue;
+    const x = b.px + (b.x - b.px) * alpha, y = b.py + (b.y - b.py) * alpha;
+    hole(x, y, 95);
+    if (add && (b.vx || b.vy)) { const p = LightTrail.pts[LightTrail.i]; LightTrail.i = (LightTrail.i + 1) % LightTrail.pts.length; p.x = x; p.y = y; p.life = 2.5; }
+  }
+  for (const p of LightTrail.pts) { if (p.life <= 0) continue; p.life -= App.frameDt || 0.016; if (p.life > 0) hole(p.x, p.y, 20 + 22 * (p.life / 2.5)); }
+  if (Input.pid !== null || Input.keyShowT > 0) hole(Input.lx, Input.ly, 70);
+  if (run.orb) hole(run.orb.x, run.orb.y, 44);
+  for (const h of run.holes) hole(h.x, h.y, 38);
+  for (const sp of run.spikes) hole(sp.x, sp.y, 34);
+  for (const bp of run.bumpers) hole(bp.x, bp.y, bp.r + 10);   // bumpers glow faintly so you can aim at them
   f.globalCompositeOperation = 'source-over';
   g.drawImage(fogC, 0, 0, T.W, T.H);
 }
@@ -2125,9 +2186,9 @@ function handleEvents(run, quiet) {
         if (!quiet) {
           if (e.boss) FX.banner('BOSS: ' + BOSSES[e.boss].name, BOSSES[e.boss].desc, '#ff8fa0', 2.2, 2);
           else if (e.mut) FX.banner(MUTATORS[e.mut].name, MUTATORS[e.mut].desc, '#4cc9f0', 2, 2);
-          else FX.banner('ROOM ' + e.n, 'Target ' + fmt(e.target), '#fff7e6', 1.3, 2);
+          else FX.banner('ROOM ' + e.n, 'Target ' + fmt(e.target) + ' · ' + run.handSize + ' marbles drawn from your bag', '#fff7e6', 1.6, 2);
         }
-        Sound.resetNotes(); break;
+        Sound.resetNotes(); for (const p of LightTrail.pts) p.life = 0; break;
       case 'roomEnd': App.ff = false; if (!quiet) App.onRoomEnd(); break;
       case 'over': if (!quiet) App.onRunOver(); break;
     }
@@ -2186,6 +2247,12 @@ const UI = {
       const R = css * 0.4 * (MATS[mat].r / 11 > 1.2 ? 1.12 : 1);
       drawMarble(g, css / 2, css / 2, R, R * d, mat, eng, 0.4);
     });
+  },
+  // Explains the selected marble's material and engravings (one at a time, replaces the last tip).
+  marbleTip(m) {
+    if (this.tipEl) this.tipEl.remove();
+    const d = document.createElement('div'); d.className = 'toast'; d.style.borderColor = '#4cc9f0'; d.innerHTML = marbleDetails(m);
+    this.toasts.appendChild(d); this.tipEl = d; setTimeout(() => { d.remove(); if (this.tipEl === d) this.tipEl = null; }, 2900);
   },
   toast(html) {
     const d = document.createElement('div'); d.className = 'toast'; d.innerHTML = html; this.toasts.appendChild(d);
@@ -2324,12 +2391,9 @@ function goalsHTML() {
 function showReward() {
   const run = App.run, lc = run.lastClear; UI.back = null;
   const cards = run.offer.map((c, i) => { const ci = cardInfo(c); return '<button class="card ' + (ci.charm ? 'charm' : '') + '" data-act="card" data-arg="' + i + '">' + ci.prev + '<div class="ctext"><div class="ctag">' + ci.tag + '</div><div class="cname">' + esc(ci.name) + '</div><div class="cdesc">' + esc(ci.desc) + '</div></div></button>'; }).join('');
-  const parts = [co('+' + lc.coins)];
-  if (lc.overkill > 0) parts.push('overkill ' + fmt(lc.overkill));
-  if (lc.left > 0) parts.push(lc.left + ' unused → +' + fmt(lc.leftBonus) + ' pts');
   UI.show('reward', '<div class="col"><h2>' + (lc.boss ? 'BOSS DOWN!' : 'ROOM ' + lc.room + ' CLEARED') + '</h2>' +
-    '<p class="center muted" style="font-weight:800">' + fmt(lc.score) + ' / ' + fmt(lc.target) + ' · ' + parts.join(' · ') + '</p>' +
-    '<div class="spacer"></div><h3 class="center">Pick an upgrade</h3>' + cards +
+    '<p class="center muted" style="font-weight:800">' + clearedLine(lc) + '</p>' +
+    '<div class="spacer"></div><h3 class="center" style="color:var(--good)">Free powerup! Pick one</h3>' + cards +
     '<button class="btn small ghost" data-act="skip">Skip (+3 ' + '<span class="coin">●</span>)</button></div>');
 }
 function pickTitle(c) {
@@ -2362,19 +2426,43 @@ function shopItemInfo(it) {
   if (it.kind === 'polish') return { name: 'Level Up', desc: '+1 level to a marble you choose.', prev: '<div class="badge sm" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:16px">LV+</div>' };
   return { name: 'Remove Marble', desc: 'Thin your bag so your best marbles come up more.', prev: '<div class="badge sm" style="background:#3a1010;border-color:#ff6b7f;color:#ff6b7f">✕</div>' };
 }
+function clearedLine(lc) {
+  const parts = [co('+' + lc.coins)];
+  if (lc.overkill > 0) parts.push('overkill ' + fmt(lc.overkill));
+  if (lc.left > 0) parts.push(lc.left + ' unused \u2192 +' + fmt(lc.leftBonus) + ' pts');
+  return fmt(lc.score) + ' / ' + fmt(lc.target) + ' \u00B7 ' + parts.join(' \u00B7 ');
+}
+function nextRoomText(run) {
+  const next = run.roomIdx + 1;
+  return 'Room ' + next + (next % T.BOSS_EVERY === 0 ? ' \u00B7 BOSS' : '') + ' \u00B7 target ' + fmt(computeTarget(next, run.cfg));
+}
+function shopHint(run) {
+  let n = run.roomIdx + 1; while (!isShopRoom(n)) n++;
+  return n === run.roomIdx + 1 ? 'The shop opens after the next room.' : 'The shop opens after room ' + n + '.';
+}
 function showShop() {
-  const run = App.run, sp = run.shop; UI.back = null;
-  const next = run.roomIdx + 1, isBoss = next % T.BOSS_EVERY === 0;
+  const run = App.run, sp = run.shop, lc = run.lastClear; UI.back = null;
   const items = sp.items.map((it, i) => {
     const info = shopItemInfo(it), can = run.canBuy(it);
-    return '<div class="shopitem ' + (it.sold ? 'sold' : '') + '">' + info.prev + '<div class="grow"><div class="nm" style="font-weight:900;font-size:18px">' + esc(info.name) + '</div><div class="ds muted" style="font-size:16px;line-height:1.25">' + esc(info.desc) + '</div></div>' +
+    return '<div class="shopitem ' + (it.sold ? 'sold' : '') + '">' + info.prev + '<div class="grow"><div class="snm">' + esc(info.name) + '</div><div class="sds">' + esc(info.desc) + '</div></div>' +
       '<button class="btn small" data-act="buy" data-arg="' + i + '" ' + (can ? '' : 'disabled') + '>' + (it.sold ? 'Sold' : co(it.cost)) + '</button></div>';
   }).join('');
-  UI.show('shop', '<div class="col"><div class="row" style="align-items:center"><h2 style="text-align:left">Shop</h2><div class="chip" style="flex:0 0 auto">' + co(run.coins) + '</div></div>' +
-    '<p class="muted" style="font-weight:800">Next: Room ' + next + (isBoss ? ' · BOSS' : '') + ' · target ' + fmt(computeTarget(next, run.cfg)) + '</p>' +
+  UI.show('shop', '<div class="col tight"><div class="row" style="align-items:center"><h2 style="text-align:left">Shop</h2><div class="chip" style="flex:0 0 auto">' + co(run.coins) + '</div></div>' +
+    (lc ? '<p class="muted" style="font-weight:800;font-size:16px">Room ' + lc.room + ' cleared: ' + clearedLine(lc) + '</p>' : '') +
+    '<p style="font-weight:900;font-size:16px">Next: ' + nextRoomText(run) + '</p>' +
     items +
-    '<div class="row"><button class="btn small" data-act="reroll" ' + (run.coins >= sp.reroll ? '' : 'disabled') + '>Reroll ' + co(sp.reroll) + '</button><button class="btn small" data-act="viewBag">Bag (' + run.bag.length + ')</button></div>' +
-    '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="leave">NEXT ROOM ▶</button></div></div>');
+    '<div class="spacer"></div><div class="row"><button class="btn small" data-act="reroll" ' + (run.coins >= sp.reroll ? '' : 'disabled') + '>Reroll ' + co(sp.reroll) + '</button><button class="btn small" data-act="viewBag">Bag ' + run.bag.length + '</button>' +
+    '<button class="btn primary" style="flex:2 1 0;min-height:56px;font-size:21px" data-act="leave">NEXT \u25B6</button></div></div>');
+}
+// Shown after a room when there's no shop (and after taking or skipping a free powerup).
+function showNext() {
+  const run = App.run, lc = run.lastClear; UI.back = null;
+  UI.show('next', '<div class="col"><h2>' + (lc.boss ? 'BOSS DOWN!' : 'ROOM ' + lc.room + ' CLEARED') + '</h2>' +
+    '<p class="center muted" style="font-weight:800">' + clearedLine(lc) + '</p>' +
+    '<div class="spacer"></div>' +
+    '<div class="panel center"><p style="font-weight:900;font-size:20px">Next: ' + nextRoomText(run) + '</p><p class="muted">' + shopHint(run) + ' You have ' + co(run.coins) + '</p></div>' +
+    '<div class="row"><button class="btn small" data-act="viewBagNext">Bag (' + run.bag.length + ')</button></div>' +
+    '<div class="foot"><button class="btn primary" data-act="leave">NEXT ROOM \u25B6</button></div></div>');
 }
 function showPause() {
   const run = App.run; UI.back = resumeGame;
@@ -2470,6 +2558,7 @@ function handleAct(act, arg) {
     case 'buy': if (App.act({ a: 'buy', i: +arg })) { Sound.buy(); App.afterChoice(); } else Sound.deny(); break;
     case 'reroll': if (App.act({ a: 'reroll' })) { Sound.card(); showShop(); } break;
     case 'viewBag': showPick(true, showShop); break;
+    case 'viewBagNext': showPick(true, showNext); break;
     case 'leave': if (App.act({ a: 'leave' })) { UI.hide(); App.acc = 0; Platform.wake.request(); } break;
     case 'resume': resumeGame(); break;
     case 'pauseBag': showPick(true, showPause); break;
@@ -2650,20 +2739,24 @@ const App = {
   toggleFF() { const run = this.run; if (!run || !run.cleared || run.phase !== 'play') return; this.ff = !this.ff; Sound.ui(); Platform.haptics.play(HAPTIC.tap); },
   tryKick() { const run = this.run; if (run && run.canKick()) run.act({ a: 'kick' }); },
   selectMarble(i) {
-    const run = this.run; if (!run) return;
-    if (run.act({ a: 'select', i })) { Sound.card(); Platform.haptics.play(HAPTIC.tap); }
+    const run = this.run; if (!run || !run.hand[i]) return;
+    if (i === 0 || run.act({ a: 'select', i })) { Sound.card(); Platform.haptics.play(HAPTIC.tap); UI.marbleTip(run.hand[0]); }
   },
   afterChoice() {
     const run = this.run;
     if (run.phase === 'pick') showPick(false);
     else if (run.phase === 'shop') showShop();
+    else if (run.phase === 'next') showNext();
     App.checkGoals();
   },
   onRoomEnd() {
     const run = this.run;
     if (!SAVE.tutorialDone) SAVE.tutorialDone = true;
     this.checkGoals(); persist(); Platform.wake.release();
-    setTimeout(() => { if (this.run === run && run.phase === 'reward' && this.state === 'play') showReward(); }, 900);
+    setTimeout(() => {
+      if (this.run !== run || this.state !== 'play') return;
+      if (run.phase === 'reward') showReward(); else if (run.phase === 'shop') showShop(); else if (run.phase === 'next') showNext();
+    }, 900);
   },
   checkGoals() {
     const run = this.run; if (!run) return;
@@ -2813,6 +2906,7 @@ function frame(now) {
   UI.frame();
   FX.update(dt * (App.stopT > 0 ? 0.25 : ts < 1 ? 0.6 : 1));
   const alpha = App.state === 'title' ? clamp(App.attractAcc / T.STEP, 0, 1) : clamp(App.acc / T.STEP, 0, 1);
+  App.frameDt = dt;
   render(alpha, App.time, dt);
 }
 

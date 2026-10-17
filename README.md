@@ -24,9 +24,9 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 
 ## How a run works
 
-1. You start with **5 Clay marbles**. Each room draws 5 from your bag.
+1. You start with **5 Clay marbles**. Each room deals 5 at random from your bag (the bag icon under the board shows how many you own).
 2. Pick which marble to throw next from the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
-3. Hit the target score to clear the room. Pick 1 of 3 upgrades, visit the shop, go to the next room.
+3. Hit the target score to clear the room. The shop opens after every third room (rooms 2, 5, 8...). After other rooms there's sometimes a free powerup (1 of 3; always after room 1 and boss rooms).
 4. If your last marble stops short of the target, the run ends.
 
 **Scoring:** bumpers, blocks and especially marble-on-marble hits score points. Points are multiplied by marble level and material, then by the **Chaos Meter** (×1 → ×2 → ×3 → ×5 → ×8 RIOT), which fills with every hit and drains when things go quiet.
