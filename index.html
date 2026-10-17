@@ -207,7 +207,7 @@ p,.txt{font-size:17px;line-height:1.35}
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 7;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 8;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -339,7 +339,7 @@ const ENGS = {
   spark:   { name: 'Spark',   desc: 'On hit, lightning jumps to the nearest marble and scores.' },
   bomb:    { name: 'Bomb',    desc: 'After 8 hits it explodes, blasting everything nearby.' },
   magnet:  { name: 'Magnet',  desc: 'Pulls nearby marbles toward it.' },
-  gold:    { name: 'Gold',    desc: '+1 coin on every scoring hit (max 15 per room).' },
+  gold:    { name: 'Gold',    desc: '+1 coin per scoring hit (max 5 per room).' },
   crown:   { name: 'Crown',   desc: 'Every hit it is part of scores ×2.' },
   seed:    { name: 'Seed',    desc: 'Where it stops, it sprouts into a bumper.' },
   frost:   { name: 'Frost',   desc: 'Freezes marbles it hits into bumpers for 4s.' },
@@ -486,7 +486,6 @@ const ACHIEVEMENTS = [
   { id: 'clutch',  name: 'Clutch Player',    desc: 'Save a slowing marble with a hit.',      reward: 10, check: r => r.stats.clutch >= 1 },
   { id: 'gold5',   name: 'Gold Digger',      desc: 'Hit 5 golden orbs (all runs).',          reward: 20, check: (r, s) => s.golden >= 5 },
   { id: 'boss',    name: 'Giant Slayer',     desc: 'Clear a boss room.',                     reward: 20, check: r => r.stats.bosses >= 1 },
-  { id: 'daily',   name: 'Daily Grind',      desc: 'Finish a Daily Seed run.',               reward: 10, check: r => r.cfg.mode === 'daily' && r.phase === 'over' },
   { id: 'charms4', name: 'Full House',       desc: 'Hold 4 charms at once.',                 reward: 25, check: r => r.charms.length >= 4 },
   { id: 'one',     name: 'One and Done',     desc: 'Clear a room with a single marble.',     reward: 30, check: r => r.stats.oneMarble >= 1 },
   { id: 'glass10', name: 'Glass Cannon',     desc: 'Shatter 10 glass marbles (all runs).',   reward: 20, check: (r, s) => s.glass >= 10 },
@@ -502,7 +501,7 @@ function defaultSave() {
   return {
     v: SAVE_VERSION,
     settings: { sound: false, music: false, haptics: true, reducedMotion: false, lowPower: false, sensitivity: 1, hand: 'right', assist: false, theme: 'felt', hard: false, loadout: 'classic' },
-    shards: 0, owned: {}, achievements: {}, initials: 'AAA', tutorialDone: false,
+    shards: 0, owned: {}, achievements: {}, initials: 'AAA', tutorialDone: false, seenHelp: false,
     stats: { runs: 0, bestScore: 0, bestRoom: 0, bestChain: 0, bestChaos: 1, longestRun: 0, totalScore: 0, totalRooms: 0, golden: 0, glass: 0, kisses: 0, shardsEarned: 0, dailyRuns: 0 },
     top10: [], daily: { date: '', best: 0, record: null }, ghost: null, combos: {}, friends: [],
   };
@@ -734,7 +733,7 @@ class Run {
 
   /* ----------------------------- rooms ----------------------------- */
   startRoom(n, path) {
-    this.path = path || 'normal'; this.inset = 0; this.comboCd = {};
+    this.path = path || 'normal'; this.inset = 0; this.comboCd = {}; this.forceSettle = false;
     this.roomIdx = n; this.target = roomTarget(n, this.cfg, this.path); this.roomScore = 0; this.roomTick = 0;
     this.rr = RNG(hash32('room|' + this.cfg.seed + '|' + n));
     this.buildRoom(n);
@@ -848,7 +847,8 @@ class Run {
 
   /* ---------------------------- actions ---------------------------- */
   canFling() { return this.phase === 'play' && this.hand.length > 0 && this.cooldown <= 0; }
-  anyMoving() { for (const b of this.marbles) if (b.alive && b.frozen <= 0 && (b.vx !== 0 || b.vy !== 0)) return true; return false; }
+  // a marble crawling slower than 3 units/s counts as stopped (stray forces can't keep a room alive forever)
+  anyMoving() { for (const b of this.marbles) if (b.alive && b.frozen <= 0 && b.vx * b.vx + b.vy * b.vy > 9) return true; return false; }
   canKick() { return this.phase === 'play' && this.kicks > 0 && (this.anyMoving() || this.roomTick - this.lastMove < T.KICK_COYOTE / T.STEP); }
   canBank() { return this.phase === 'play' && this.cleared && this.hand.length > 0 && !this.anyMoving() && !this.echoes.length && !this.pendingBoom.length; }
   // Validated + recorded entry point for player input.
@@ -862,6 +862,7 @@ class Run {
         this.hand.unshift(this.hand.splice(a.i, 1)[0]); return true;
       }
       case 'bank': if (!this.canBank()) return false; this.endRoom(true); return true;
+      case 'settle': if (this.phase !== 'play' || !this.cleared) return false; this.forceSettle = true; return true;
       case 'card': return this.pickCard(a.i);
       case 'skip': if (this.phase !== 'reward') return false; this.coins += 3; this.phase = 'next'; return true;
       case 'target': return this.pickTarget(a.i);
@@ -869,7 +870,7 @@ class Run {
         if (this.phase !== 'pick' || !this.pending || this.pending.from !== 'shop') return false;
         this.coins += this.pending.cost; this.shop.items[this.pending.slot].sold = false; this.pending = null; this.phase = 'shop'; return true;
       case 'buy': return this.buy(a.i);
-      case 'reroll': if (this.phase !== 'shop' || this.coins < this.shop.reroll) return false; this.coins -= this.shop.reroll; this.shop.reroll++; this.genShopItems(); return true;
+      case 'reroll': if (this.phase !== 'shop' || this.coins < this.shop.reroll) return false; this.coins -= this.shop.reroll; this.shop.reroll += 2; this.genShopItems(); return true;
       case 'leave': { if (this.phase !== 'shop' && this.phase !== 'next') return false; const ps = this.paths || ['normal']; this.startRoom(this.roomIdx + 1, ps[a.i | 0] || ps[0]); return true; }
     }
     return false;
@@ -948,7 +949,7 @@ class Run {
       x, y, px: x, py: y, vx, vy, dx: 0, dy: -1, stopTick: -99999,
       alive: true, frozen: 0, charged: 0, kiss: false, bombHits: 0, bombed: false, cloned: false, fused: false,
       pin: 0, travel: 0, lastShot: false, throwId: -1, cd: new Map(), near: {}, sparkCd: 0, echoCd: 0, gateCd: 0, wallCd: 0,
-      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0, bhT: 0, bhDone: false, chargeMult: 2, vortT: 0, vortDone: false, padUses: 0,
+      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0, bhT: 0, bhDone: false, chargeMult: 2, vortT: 0, vortDone: false, padUses: 0, age: 0,
     };
   }
 
@@ -979,6 +980,7 @@ class Run {
     this.endCheck();
   }
   settleFactor() {
+    if (this.forceSettle) return 1000;
     if (this.lastThrow < 0) return 1;
     const wait = this.hand.length ? T.SETTLE_IDLE : T.SETTLE_AFTER + (this.has('overtime') ? 5 : 0);
     const s = (this.roomTick - this.lastThrow) * T.STEP - wait;
@@ -1021,7 +1023,8 @@ class Run {
       if (b.charged > 0) b.charged -= dt; if (b.wallCd > 0) b.wallCd -= dt;
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
       if (sp > 0) {
-        const fr = b.fric * mutF * settle;
+        b.age += dt;
+        const fr = b.fric * mutF * settle * (b.age > 10 ? 1 + (b.age - 10) * 1.5 : 1);   // anti-loop: old marbles slow down
         let ns = sp * Math.max(0, 1 - T.DAMP * fr * dt) - T.DECEL * fr * dt;
         if (ns < 2) { b.dx = b.vx / sp; b.dy = b.vy / sp; b.vx = 0; b.vy = 0; b.stopTick = this.roomTick; }
         else {
@@ -1056,7 +1059,7 @@ class Run {
       for (const h of this.holes) {
         const dx = b.x - h.x, dy = b.y - h.y, d = Math.sqrt(dx * dx + dy * dy);
         if (d < h.r + b.r * 0.2 && d > 0.01) { const pull = 320 * dt; b.vx -= dx / d * pull; b.vy -= dy / d * pull; }
-        if (d < h.r * 0.5 || (d < h.r - 3 && sp < 240)) { this.kill(b, 'fall', h); break; }
+        if (d < h.r * 0.5 || (d < h.r - 3 && sp < 240) || (d < h.r + b.r * 0.2 && sp < 25)) { this.kill(b, 'fall', h); break; }   // slow marbles on the lip drop in
         this.nearCheck(b, h.id, d - h.r - b.r, sp);
       }
       if (!b.alive) continue;
@@ -1069,7 +1072,7 @@ class Run {
       }
       for (const pd of this.pads) {   // boost pad: launches the marble along its arrows
         const dx = b.x - pd.x, dy = b.y - pd.y, lx = dx * pd.c + dy * pd.s, ly = -dx * pd.s + dy * pd.c;
-        if (Math.abs(lx) < pd.w / 2 && Math.abs(ly) < pd.h / 2 && b.padUses < 3 && this.cdOk(b, pd.id, 1.0)) {
+        if (Math.abs(lx) < pd.w / 2 && Math.abs(ly) < pd.h / 2 && b.padUses < 2 && b.age < 9 && this.cdOk(b, pd.id, 1.5)) {
           b.padUses++;
           const sp2 = Math.sqrt(b.vx * b.vx + b.vy * b.vy), ns = Math.min(T.SPEED_CAP, Math.max(sp2 * 1.2, 720));
           b.vx = pd.c * ns; b.vy = pd.s * ns; b.moved = true;
@@ -1106,12 +1109,14 @@ class Run {
         const dx = b.x - this.orb.x, dy = b.y - this.orb.y, m = b.r + this.orb.r;
         if (dx * dx + dy * dy < m * m) {
           const o = this.orb; this.orb = null; this.stats.golden++;
-          this.coins += this.mut === 'goldfever' ? 10 : 5;
+          this.coins += this.mut === 'goldfever' ? 5 : 3;
           this.award(150 * this.valOf(b), o.x, o.y, 'bonus', b, null, { label: 'GOLDEN!' });
           this.emit('golden', { x: o.x, y: o.y });
         }
       }
     }
+    // hard stop: once the room has settled, nothing may keep moving (guarantees every room ends)
+    if (settle >= 1000) for (const b of ms) { b.vx = 0; b.vy = 0; }
     // marble vs marble
     const n = ms.length;
     for (let i = 0; i < n; i++) {
@@ -1165,8 +1170,7 @@ class Run {
     let nx = 0, ny = -1; if (d > 1e-6) { nx = dx / d; ny = dy / d; }
     b.x = cx + nx * rr; b.y = cy + ny * rr;
     const vn = b.vx * nx + b.vy * ny; let imp = 0;
-    if (vn < 0) { imp = -vn; b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; }
-    if (kick) { b.vx += nx * kick; b.vy += ny * kick; }
+    if (vn < 0) { imp = -vn; b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; if (kick) { b.vx += nx * kick; b.vy += ny * kick; } }   // kick only on a real impact
     return imp;
   }
   // Circle vs rotated box: work in the box's own frame, then rotate the result back.
@@ -1499,7 +1503,7 @@ class Run {
     return k;
   }
   goldCheck(m) {
-    if (m.eng.indexOf('gold') >= 0 && this.goldCoins < 15) { this.goldCoins++; this.coins += this.mut === 'goldfever' ? 2 : 1; this.emit('coin', { x: m.x, y: m.y }); }
+    if (m.eng.indexOf('gold') >= 0 && this.goldCoins < 5) { this.goldCoins++; this.coins += this.mut === 'goldfever' ? 2 : 1; this.emit('coin', { x: m.x, y: m.y }); }
   }
   endCheck() {
     let bh = false; for (const b of this.marbles) if (b.alive && b.bhT > 0) { bh = true; break; }
@@ -1515,11 +1519,11 @@ class Run {
     if (this.phase !== 'play') return;
     if (!success) { this.finish(); return; }
     const left = this.hand.length, overkill = Math.max(0, this.roomScore - this.target);
-    let coins = 3 + Math.min(10, Math.floor(overkill / this.target * 4)) + left * 3;
+    let coins = 2 + Math.min(4, Math.floor(overkill / this.target * 2)) + left;
     if (this.mut === 'goldfever') coins += 3;
     if (this.has('piggy')) coins += Math.min(5, Math.floor(this.coins / 5));
-    if (this.boss) { coins += 5; this.stats.bosses++; }
-    if (this.path === 'gold') coins *= 2;
+    if (this.boss) { coins += 3; this.stats.bosses++; }
+    if (this.path === 'gold') coins = Math.round(coins * 1.75);
     if (this.path === 'wild') coins += 5;
     const leftBonus = Math.round(this.target * 0.1 * left);
     this.score += leftBonus; this.bd.leftover += leftBonus;
@@ -1546,7 +1550,7 @@ class Run {
   canEngrave(m, e) { return m.eng.length < T.ENG_SLOTS && m.eng.indexOf(e) < 0; }
   genPaths() {
     if ((this.roomIdx + 1) % T.BOSS_EVERY === 0) return ['boss'];
-    return this.rng.shuffle(['normal', 'gold', 'calm', 'elite', 'wild']).slice(0, 2);
+    return ['normal', this.rng.pick(['gold', 'calm', 'elite', 'wild'])];   // a Standard room is always on offer
   }
   rollRarity(boost) { const x = this.rng.next(), leg = 0.05 + 0.15 * boost, rare = 0.27 + 0.25 * boost; return x < leg ? 'l' : x < leg + rare ? 'r' : 'c'; }
   genCards(boost) {
@@ -1599,17 +1603,17 @@ class Run {
     this.phase = from === 'reward' ? 'next' : 'shop';
     return true;
   }
-  toShop() { this.shop = { reroll: 2, items: [] }; this.genShopItems(); this.phase = 'shop'; }
+  toShop() { this.shop = { reroll: 3, items: [] }; this.genShopItems(); this.phase = 'shop'; }
   genShopItems() {
     const rng = this.rng, pool = this.cfg.pool, items = [];
     const ofR = (list, r) => { const f = list.filter(k => (RAR[k] || 'c') === r); return f.length ? f : list; };
     for (let i = 0; i < 2; i++) {
       const r = this.rollRarity(0), mat = rng.pick(['clay'].concat(pool.mats)), eng = [rng.pick(ofR(pool.engs, r))];
-      items.push({ kind: 'marble', mat, eng, rarity: RAR[eng[0]] || 'c', cost: 5 + (mat !== 'clay' ? 2 : 0) + ({ c: 0, r: 3, l: 7 })[RAR[eng[0]] || 'c'] + rng.int(0, 2) });
+      items.push({ kind: 'marble', mat, eng, rarity: RAR[eng[0]] || 'c', cost: 12 + (mat !== 'clay' ? 3 : 0) + ({ c: 0, r: 5, l: 10 })[RAR[eng[0]] || 'c'] + rng.int(0, 3) });
     }
     const r = this.rollRarity(0), avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
-    if (avail.length) { const ch = rng.pick(ofR(avail, r)); items.push({ kind: 'charm', charm: ch, rarity: RAR[ch] || 'c', cost: ({ c: 9, r: 12, l: 16 })[RAR[ch] || 'c'] + rng.int(0, 2) }); }
-    items.push({ kind: 'polish', cost: 4 }, { kind: 'remove', cost: 3 });
+    if (avail.length) { const ch = rng.pick(ofR(avail, r)); items.push({ kind: 'charm', charm: ch, rarity: RAR[ch] || 'c', cost: ({ c: 16, r: 21, l: 28 })[RAR[ch] || 'c'] + rng.int(0, 3) }); }
+    items.push({ kind: 'polish', cost: 9 }, { kind: 'remove', cost: 6 });
     this.shop.items = items;
   }
   canBuy(it) {
@@ -1848,7 +1852,7 @@ const FX = {
   shake: 0, flash: 0, flashCol: '#fff', banners: [],
   init() {
     for (let i = 0; i < 400; i++) this.P.push({ life: 0, max: 1, x: 0, y: 0, vx: 0, vy: 0, size: 2, color: '#fff', kind: 0, drag: 0, grav: 0, rot: 0 });
-    for (let i = 0; i < 40; i++) this.pops.push({ life: 0, max: 1, x: 0, y: 0, text: '', color: '#fff', size: 16 });
+    for (let i = 0; i < 80; i++) this.pops.push({ life: 0, max: 1, x: 0, y: 0, text: '', color: '#fff', size: 16 });
     for (let i = 0; i < 32; i++) this.rings.push({ life: 0, max: 1, x: 0, y: 0, r0: 0, r1: 0, color: '#fff', w: 2 });
     for (let i = 0; i < 16; i++) this.bolts.push({ life: 0, x1: 0, y1: 0, x2: 0, y2: 0, seed: 0 });
   },
@@ -2419,7 +2423,8 @@ function handleEvents(run, quiet) {
           if (snd) Sound.golden(); if (hap) hap.play(HAPTIC.clear);
         }
         if (e.label) { if (!quiet) FX.banner(e.label + (e.label.indexOf('+') < 0 ? ' +' + fmt(e.pts) : ''), '', '#ffffff', 0.9, 1); FX.pop(e.x, e.y, '+' + fmt(e.pts), '#ffffff', 16, 0.7); }
-        else if (e.pts >= 12 || e.cat === 'bumpers') FX.pop(e.x, e.y, '+' + fmt(e.pts), e.cat === 'bumpers' ? '#ffe9a8' : CHAOS_COL[run.chaosLvl], e.pts >= 1000 ? 19 : 15, 0.7);
+        else if (e.cat === 'bumpers') FX.pop(e.x, e.y - 12, '+' + fmt(e.pts), '#ffe066', e.pts >= 1000 ? 22 : 19, 0.85);
+        else if (e.pts >= 12) FX.pop(e.x, e.y, '+' + fmt(e.pts), CHAOS_COL[run.chaosLvl], e.pts >= 1000 ? 19 : 15, 0.7);
         break;
       case 'clack': {
         const v = e.v;
@@ -2535,7 +2540,7 @@ const UI = {
     const bank = play && run.canBank();
     // fast-forward is offered once the target is met and the board is still settling
     const ff = play && run.cleared && !bank && (run.anyMoving() || run.echoes.length > 0 || run.pendingBoom.length > 0);
-    if (!ff && App.ff) App.ff = false;              // the board settled (or the room ended): back to normal speed
+    if (!ff && App.ff && !(play && run.forceSettle)) App.ff = false;   // the board settled (or the room ended): back to normal speed
     this.setVis(this.bankBtn, bank); this.setVis(this.ffBtn, ff); this.bankHidden = !(bank || ff);
     if (ff) {
       const label = App.ff ? '▶ NORMAL SPEED' : '⏩ FAST FORWARD 3×';
@@ -2604,27 +2609,35 @@ function marbleName(m) { return MATS[m.mat].name + (m.eng.length ? ' · ' + m.en
 
 function showTitle() {
   App.state = 'title'; UI.back = null;
-  const s = SAVE.stats, daily = SAVE.daily.date === todayStr() ? SAVE.daily.best : 0;
-  const lo = LOADOUTS[SAVE.settings.loadout];
+  const s = SAVE.stats;
   UI.show('title', '<div class="col">' +
     '<h1 class="logo">CLACK</h1><div class="tag">Fling. Collide. Beat the target.</div>' +
-    '<div class="chips"><div class="chip">BEST ' + fmt(s.bestScore) + '</div><div class="chip">' + sh(SAVE.shards) + '</div></div>' +
+    '<div class="chips"><div class="chip">BEST ' + fmt(s.bestScore) + '</div></div>' +
     '<div class="spacer"></div>' +
-    '<div class="chips"><button class="chip" data-act="toggleSound">' + (SAVE.settings.sound || SAVE.settings.music ? '♪ Sound: ON' : '♪ Sound: OFF') + '</button><button class="chip" data-act="cycleLoadout">Bag: ' + esc(lo.name) + ' ▸</button>' +
-    (owns('mode_hard') ? '<button class="chip" data-act="toggleHard">Hard: ' + (SAVE.settings.hard ? 'ON' : 'OFF') + '</button>' : '') +
+    '<div class="chips"><button class="chip" data-act="toggleSound">' + (SAVE.settings.sound || SAVE.settings.music ? '♪ Sound: ON' : '♪ Sound: OFF') + '</button><button class="chip" data-act="toggleHard">Hard: ' + (SAVE.settings.hard ? 'ON' : 'OFF') + '</button>' +
     (SAVE.settings.assist ? '<div class="chip">Assist ON</div>' : '') + '</div>' +
     '<button class="btn primary" data-act="play">▶ PLAY</button>' +
-    '<button class="btn blue stack" data-act="daily">DAILY SEED<span class="sub">' + (daily ? 'Today’s best ' + fmt(daily) : 'Same rooms for everyone today') + '</span></button>' +
-    '<div class="row"><button class="btn small" data-act="workshop">Workshop</button><button class="btn small" data-act="records">Records</button><button class="btn small" data-act="settings">Settings</button></div>' +
+    '<div class="row"><button class="btn small" data-act="help">How to play</button><button class="btn small" data-act="records">Records</button><button class="btn small" data-act="settings">Settings</button></div>' +
     '</div>', true);
   Sound.Music.setMode('menu');
 }
 
+function showHelp(back, first) {
+  UI.back = back;
+  const step = (n, title, body) => '<div class="li"><div class="badge sm" style="background:#123329;border-color:#ffb627;color:#ffd166">' + n + '</div><div class="grow"><div class="nm">' + title + '</div><div class="ds">' + body + '</div></div></div>';
+  UI.show('help', '<div class="col"><h2>How to play</h2><div class="list">' +
+    step(1, 'Drop, pull back, let go', 'Touch anywhere on the board to place your marble, pull back like a slingshot, release to fling. Drag back to the \u2715 ring to cancel.') +
+    step(2, 'Every collision scores', 'Bumpers, blocks, stars and especially other marbles. Fast chains fill the Chaos meter (\u00D72 \u2192 \u00D78).') +
+    step(3, 'Beat the target', 'Reach the room\u2019s target before your last marble stops. Leftover marbles pay coins.') +
+    step(4, 'Tap to kick', 'A quick tap speeds up rolling marbles (2 per room). Tap a marble in the tray to throw it next; tap the bag to see them all.') +
+    step(5, 'Upgrade and choose', 'Between rooms: free powerups, a shop every 3 rooms, and you pick the next room type. A boss waits every 5th room.') +
+    '</div><div class="spacer"></div><div class="foot"><button class="btn primary" data-act="' + (first ? 'helpGo' : 'back') + '">' + (first ? '\u25B6 LET\u2019S GO' : 'Got it') + '</button></div></div>');
+}
 function showSettings(back) {
   UI.back = back;
   const st = SAVE.settings;
   const tog = (key, label, sub) => '<div class="set"><div class="lbl">' + label + (sub ? '<small>' + sub + '</small>' : '') + '</div><button class="tog ' + (st[key] ? 'on' : '') + '" data-act="set" data-arg="' + key + '">' + (st[key] ? 'ON' : 'OFF') + '</button></div>';
-  const themes = Object.keys(THEMES).filter(themeOwned).map(id => '<button class="' + (st.theme === id ? 'on' : '') + '" data-act="theme" data-arg="' + id + '">' + esc(THEMES[id].name.split(' ')[0]) + '</button>').join('');
+  const themes = Object.keys(THEMES).map(id => '<button class="' + (st.theme === id ? 'on' : '') + '" data-act="theme" data-arg="' + id + '">' + esc(THEMES[id].name.split(' ')[0]) + '</button>').join('');
   UI.show('settings', '<div class="col"><h2>Settings</h2>' +
     tog('sound', 'Sound effects') + tog('music', 'Music') + tog('haptics', 'Haptics', 'Vibration on hits and pickups') +
     tog('reducedMotion', 'Reduce motion', 'No screen shake or flashes') + tog('lowPower', 'Low power mode', '30 fps, fewer effects') +
@@ -2632,7 +2645,7 @@ function showSettings(back) {
     '<div class="set"><div class="lbl">Pause button</div><div class="seg"><button class="' + (st.hand === 'left' ? 'on' : '') + '" data-act="hand" data-arg="left">Left</button><button class="' + (st.hand === 'right' ? 'on' : '') + '" data-act="hand" data-arg="right">Right</button></div></div>' +
     '<div class="set" style="flex-wrap:wrap"><div class="lbl">Board theme</div><div class="seg" style="flex-wrap:wrap">' + themes + '</div></div>' +
     tog('assist', 'Assist mode', '+1 marble, easier targets, long aim line. Not ranked. Applies next run.') +
-    '<div class="row"><button class="btn small" data-act="tutorial">Replay tutorial</button><button class="btn small ghost" data-act="reset">Reset data</button></div>' +
+    '<div class="row"><button class="btn small" data-act="help">How to play</button><button class="btn small ghost" data-act="reset">Reset data</button></div>' +
     '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Done</button></div></div>');
 }
 
@@ -2645,8 +2658,8 @@ function showRecords(tab) {
   } else if (tab === 'stats') {
     const row = (k, v) => '<div class="li"><div class="grow">' + k + '</div><div class="nm">' + v + '</div></div>';
     const dailyBest = SAVE.daily.date === todayStr() ? SAVE.daily.best : 0;
-    body = '<div class="list">' + row('Best score', fmt(s.bestScore)) + row('Today’s daily best', fmt(dailyBest)) + row('Furthest room', s.bestRoom) + row('Best combo chain', s.bestChain) +
-      row('Best Chaos', '×' + s.bestChaos) + row('Longest run', Math.round(s.longestRun) + 's') + row('Total runs', s.runs) + row('Rooms cleared', s.totalRooms) + row('Shards earned', s.shardsEarned) + '</div>';
+    body = '<div class="list">' + row('Best score', fmt(s.bestScore)) + row('Furthest room', s.bestRoom) + row('Best combo chain', s.bestChain) +
+      row('Best Chaos', '×' + s.bestChaos) + row('Longest run', Math.round(s.longestRun) + 's') + row('Total runs', s.runs) + row('Rooms cleared', s.totalRooms) + '</div>';
   } else if (tab === 'combos') {
     const found = COMBOS.filter(c => SAVE.combos[c.id]).length;
     body = '<p class="center muted">' + found + ' of ' + COMBOS.length + ' combos discovered. Combos trigger when two engravings meet in one collision.</p><div class="list">' +
@@ -2655,39 +2668,10 @@ function showRecords(tab) {
     body = SAVE.friends.length ? '<div class="list">' + SAVE.friends.map((fr, i) => '<div class="li"><div class="grow"><div class="nm">' + esc(fr.n) + ' — ' + fmt(fr.s) + (fr.verified ? ' ✓' : '') + '</div><div class="ds">' + esc(fr.label) + (fr.mine ? ' · You: ' + fmt(fr.mine) + (fr.mine > fr.s ? ' (you win)' : '') : '') + '</div></div><button class="btn small" data-act="raceFriend" data-arg="' + i + '">Race</button></div>').join('') + '</div>'
       : '<p class="muted center">No challenges yet. Finish a run and tap Challenge to send a friend your exact run. Their phone replays it as a ghost.</p>';
   } else {
-    body = '<div class="list">' + ACHIEVEMENTS.map(a => { const got = !!SAVE.achievements[a.id]; const hidden = a.secret && !got; return '<div class="li ' + (got ? '' : 'done') + '"><div class="nm" style="width:28px">' + (got ? '★' : '☆') + '</div><div class="grow"><div class="nm">' + (hidden ? '???' : esc(a.name)) + '</div><div class="ds">' + (hidden ? 'A secret technique.' : esc(a.desc)) + '</div></div><div class="nm">' + sh(a.reward) + '</div></div>'; }).join('') + '</div>';
+    body = '<div class="list">' + ACHIEVEMENTS.map(a => { const got = !!SAVE.achievements[a.id]; const hidden = a.secret && !got; return '<div class="li ' + (got ? '' : 'done') + '"><div class="nm" style="width:28px">' + (got ? '★' : '☆') + '</div><div class="grow"><div class="nm">' + (hidden ? '???' : esc(a.name)) + '</div><div class="ds">' + (hidden ? 'A secret technique.' : esc(a.desc)) + '</div></div></div>'; }).join('') + '</div>';
   }
   const tb = (id, n) => '<button class="btn ' + (tab === id ? 'on' : '') + '" data-act="rtab" data-arg="' + id + '">' + n + '</button>';
   UI.show('records', '<div class="col"><h2>Records</h2><div class="tabs">' + tb('top', 'Top 10') + tb('stats', 'Stats') + tb('ach', 'Awards') + tb('combos', 'Combos') + tb('friends', 'Friends') + '</div>' + body + '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Back</button></div></div>');
-}
-
-function showWorkshop() {
-  UI.back = showTitle;
-  const cats = {};
-  for (const u of UNLOCKS) (cats[u.cat] = cats[u.cat] || []).push(u);
-  let html = '<div class="col"><h2>Workshop</h2><div class="chips"><div class="chip">' + sh(SAVE.shards) + '</div></div><p class="muted center">Shards come from every run, challenge and award. Unlocks add new upgrades to the pool.</p>';
-  for (const c in cats) {
-    html += '<h3>' + c + '</h3><div class="list">';
-    for (const u of cats[c]) {
-      const own = owns(u.id);
-      let btn;
-      if (!own) btn = '<button class="btn small blue" data-act="unlock" data-arg="' + u.id + '" ' + (SAVE.shards < u.cost ? 'disabled' : '') + '>' + sh(u.cost) + '</button>';
-      else if (u.loadout) btn = SAVE.settings.loadout === u.loadout ? '<div class="nm">Equipped</div>' : '<button class="btn small" data-act="equipBag" data-arg="' + u.loadout + '">Equip</button>';
-      else if (u.theme) btn = SAVE.settings.theme === u.theme ? '<div class="nm">Active</div>' : '<button class="btn small" data-act="theme" data-arg="' + u.theme + '">Use</button>';
-      else if (u.mode) btn = '<button class="btn small" data-act="toggleHard">' + (SAVE.settings.hard ? 'ON' : 'OFF') + '</button>';
-      else btn = '<div class="nm" style="color:var(--good)">Owned</div>';
-      let icon = '';
-      if (u.grant && u.grant.mats) icon = prevCanvas(u.grant.mats[0], [], true);
-      else if (u.grant && u.grant.engs) icon = prevCanvas('clay', u.grant.engs, true);
-      else if (u.grant && u.grant.charms) icon = '<div class="badge sm">' + CHARMS[u.grant.charms[0]].glyph + '</div>';
-      else if (u.loadout) icon = prevCanvas(LOADOUTS[u.loadout].bag[LOADOUTS[u.loadout].bag.length - 1][0], LOADOUTS[u.loadout].bag[LOADOUTS[u.loadout].bag.length - 1][1], true);
-      html += '<div class="li">' + icon + '<div class="grow"><div class="nm">' + esc(u.name) + '</div><div class="ds">' + esc(u.desc) + '</div></div>' + btn + '</div>';
-    }
-    html += '</div>';
-  }
-  if (SAVE.settings.loadout !== 'classic') html += '<button class="btn small" data-act="equipBag" data-arg="classic">Equip Classic bag</button>';
-  html += '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Back</button></div></div>';
-  UI.show('workshop', html);
 }
 
 function cardInfo(c) {
@@ -2704,7 +2688,7 @@ function cardInfo(c) {
 }
 function goalsHTML() {
   if (!App.challenges.length) return '';
-  return '<h3>Challenges</h3><div class="list">' + App.challenges.map(c => '<div class="li c ' + (App.chalDone[c.id] ? 'done' : '') + '"><div class="nm">' + (App.chalDone[c.id] ? '✓' : '○') + '</div><div class="grow">' + esc(c.text) + '</div><div class="nm">' + sh(c.reward) + '</div></div>').join('') + '</div>';
+  return '<h3>Challenges</h3><div class="list">' + App.challenges.map(c => '<div class="li c ' + (App.chalDone[c.id] ? 'done' : '') + '"><div class="nm">' + (App.chalDone[c.id] ? '✓' : '○') + '</div><div class="grow">' + esc(c.text) + '</div></div>').join('') + '</div>';
 }
 function showReward() {
   const run = App.run, lc = run.lastClear; UI.back = null;
@@ -2807,7 +2791,7 @@ function tipFor(run) {
   if (st.lost >= 3) tips.push('Holes swallow slow marbles. Fast ones can skim right over the edge (and score a near-miss).');
   if (run.bag.every(m => !m.eng.length)) tips.push('Engrave your marbles. Abilities trigger on every collision.');
   if (run.charms.length === 0 && st.rooms >= 2) tips.push('Charms change the rules for the whole run. Save coins for one in the shop.');
-  if (st.maxLeftover === 0 && st.rooms >= 2) tips.push('Clear a room early: every unused marble pays 3 coins and bonus points.');
+  if (st.maxLeftover === 0 && st.rooms >= 2) tips.push('Clear a room early: every unused marble pays a coin and bonus points.');
   tips.push('Gold ×2 gates charge any marble that rolls through them.', 'Bumpers add speed. Bank shots off them keep marbles alive.');
   return tips[0];
 }
@@ -2828,9 +2812,8 @@ function showOver() {
     '<div class="big" id="finalScore">0</div>' + delta + picker +
     '<div class="list">' + row('Marble hits', bd.hits) + row('Bumpers', bd.bumpers) + row('Blocks', bd.blocks) + row('Bonuses', bd.bonus) + row('Unused marbles', bd.leftover) + row('Hard mode ×1.5', bd.hard) + '</div>' +
     goalsHTML() +
-    '<div class="li c"><div class="grow">Shards earned</div><div class="nm">' + sh('+' + o.shardsTotal) + '</div></div>' +
     '<div class="panel"><p><b>Tip:</b> ' + esc(tipFor(run)) + '</p></div>' +
-    '<div class="spacer"></div><div class="foot"><div class="row"><button class="btn small blue" data-act="challenge" ' + (run.cfg.assist ? 'disabled' : '') + '>Challenge</button><button class="btn small" data-act="share">Share</button>' + (run.cfg.mode === 'endless' ? '<button class="btn small" data-act="rematch">Rematch</button>' : '') + '<button class="btn small" data-act="menu">Menu</button></div>' +
+    '<div class="spacer"></div><div class="foot"><div class="row"><button class="btn small blue" data-act="challenge" ' + (run.cfg.assist ? 'disabled' : '') + '>Challenge</button><button class="btn small" data-act="share">Share</button>' + '<button class="btn small" data-act="menu">Menu</button></div>' +
     '<button class="btn primary" data-act="retry">↻ RETRY</button></div></div>');
   const el = $('finalScore'), target = o.score, t0 = performance.now(), dur = SAVE.settings.reducedMotion ? 0 : 900;
   const stepFn = now => { const k = dur ? clamp((now - t0) / dur, 0, 1) : 1; el.textContent = fmt(target * (1 - Math.pow(1 - k, 3))); if (k < 1 && el.isConnected) requestAnimationFrame(stepFn); };
@@ -2848,9 +2831,9 @@ function applySettings() {
 function handleAct(act, arg) {
   const run = App.run;
   switch (act) {
-    case 'play': startRun('endless'); break;
-    case 'daily': startRun('daily'); break;
-    case 'workshop': showWorkshop(); break;
+    case 'play': if (!SAVE.seenHelp) showHelp(null, true); else startRun('endless'); break;
+    case 'help': showHelp(UI.name === 'settings' ? UI.back : showTitle); break;
+    case 'helpGo': SAVE.seenHelp = true; persist(); startRun('endless'); break;
     case 'records': showRecords('top'); break;
     case 'rtab': showRecords(arg); break;
     case 'settings': showSettings(showTitle); break;
@@ -2858,7 +2841,7 @@ function handleAct(act, arg) {
     case 'set': SAVE.settings[arg] = !SAVE.settings[arg]; persist(); applySettings(); if (arg === 'lowPower') { Perf.q = SAVE.settings.lowPower ? 0 : 2; computeLayout(); } showSettings(UI.back); break;
     case 'sens': SAVE.settings.sensitivity = +arg; persist(); showSettings(UI.back); break;
     case 'hand': SAVE.settings.hand = arg; persist(); UI.layoutButtons(); showSettings(UI.back); break;
-    case 'theme': if (themeOwned(arg)) { SAVE.settings.theme = arg; persist(); applySettings(); } if (UI.name === 'workshop') showWorkshop(); else showSettings(UI.back); break;
+    case 'theme': if (THEMES[arg]) { SAVE.settings.theme = arg; persist(); applySettings(); } showSettings(UI.back); break;
     case 'tutorial': SAVE.tutorialDone = false; persist(); UI.toast('Tutorial will show in your next run'); break;
     case 'reset': UI.confirm('Erase all progress, records and unlocks?', 'Erase', () => UI.confirm('Really? This cannot be undone.', 'Erase all', () => { Platform.storage.remove(SAVE_KEY); SAVE = defaultSave(); persist(); applySettings(); computeLayout(); showTitle(); UI.toast('All data reset'); })); break;
     case 'modalYes': { const f = UI.onYes; UI.closeModal(); if (f) f(); break; }
@@ -2870,15 +2853,7 @@ function handleAct(act, arg) {
       showTitle(); break;
     }
     case 'toggleSound': { const on = !(SAVE.settings.sound || SAVE.settings.music); SAVE.settings.sound = SAVE.settings.music = on; persist(); applySettings(); Sound.unlock(); showTitle(); break; }
-    case 'toggleHard': if (owns('mode_hard')) { SAVE.settings.hard = !SAVE.settings.hard; persist(); } if (UI.name === 'workshop') showWorkshop(); else showTitle(); break;
-    case 'unlock': {
-      const u = UNLOCKS.find(x => x.id === arg); if (!u || owns(u.id) || SAVE.shards < u.cost) { Sound.deny(); break; }
-      SAVE.shards -= u.cost; SAVE.owned[u.id] = true;
-      if (u.loadout) SAVE.settings.loadout = u.loadout;
-      if (u.theme) { SAVE.settings.theme = u.theme; applySettings(); }
-      persist(); Sound.buy(); UI.toast('Unlocked: ' + esc(u.name)); showWorkshop(); break;
-    }
-    case 'equipBag': if (loadoutOwned(arg)) { SAVE.settings.loadout = arg; persist(); } showWorkshop(); break;
+    case 'toggleHard': SAVE.settings.hard = !SAVE.settings.hard; persist(); showTitle(); break;
     case 'card': if (App.act({ a: 'card', i: +arg })) { Sound.card(); App.afterChoice(); } break;
     case 'skip': if (App.act({ a: 'skip' })) App.afterChoice(); break;
     case 'target': if (App.act({ a: 'target', i: +arg })) { Sound.buy(); App.afterChoice(); } break;
@@ -3070,7 +3045,14 @@ const App = {
     else this.bufferedFling = { act, until: this.time + T.INPUT_BUFFER };   // input buffering during cooldown
   },
   ff: false,
-  toggleFF() { const run = this.run; if (!run || !run.cleared || run.phase !== 'play') return; this.ff = !this.ff; Sound.ui(); Platform.haptics.play(HAPTIC.tap); },
+  // Fast-forward: 3x speed, and the room is wrapped up within 3 seconds (marbles stop, unused marbles cash out).
+  toggleFF() { const run = this.run; if (!run || !run.cleared || run.phase !== 'play') return; this.ff = !this.ff; this.ffT = 0; Sound.ui(); Platform.haptics.play(HAPTIC.tap); },
+  ffUpdate(dt) {
+    const run = this.run; if (!this.ff || !run || run.phase !== 'play') return;
+    this.ffT += dt;
+    if (this.ffT > 2.4 && !run.forceSettle) run.act({ a: 'settle' });
+    if (run.forceSettle && run.canBank()) run.act({ a: 'bank' });
+  },
   tryKick() { const run = this.run; if (run && run.canKick()) run.act({ a: 'kick' }); },
   viewBag() {
     if (!this.run || this.run.phase !== 'play') return;
@@ -3100,12 +3082,12 @@ const App = {
   checkGoals() {
     const run = this.run; if (!run) return;
     for (const c of this.challenges) if (!this.chalDone[c.id] && c.check(run)) {
-      this.chalDone[c.id] = true; SAVE.shards += c.reward; SAVE.stats.shardsEarned += c.reward; this.goalShards += c.reward;
-      UI.toast('✓ ' + esc(c.text) + ' ' + sh('+' + c.reward));
+      this.chalDone[c.id] = true;
+      UI.toast('✓ Challenge: ' + esc(c.text));
     }
     for (const a of ACHIEVEMENTS) if (!SAVE.achievements[a.id] && a.check(run, SAVE.stats)) {
-      SAVE.achievements[a.id] = todayStr(); SAVE.shards += a.reward; SAVE.stats.shardsEarned += a.reward; this.goalShards += a.reward;
-      UI.toast('★ ' + esc(a.name) + ' ' + sh('+' + a.reward));
+      SAVE.achievements[a.id] = todayStr();
+      UI.toast('★ Award: ' + esc(a.name));
     }
   },
   onRunOver() {
@@ -3125,13 +3107,10 @@ const App = {
       SAVE.top10.push(entry); SAVE.top10.sort((a, b) => b.score - a.score); if (SAVE.top10.length > 10) SAVE.top10.length = 10;
       rank = SAVE.top10.indexOf(entry); if (rank < 0) entry = null;
     }
-    let shards = Math.min(T.SHARDS_SCORE_CAP, Math.floor(score / T.SHARDS_PER_SCORE)) + run.stats.rooms * 3;
-    if (assist) shards = Math.floor(shards / 2);
-    SAVE.shards += shards; s.shardsEarned += shards;
     this.checkGoals();
     persist();
     if (this.rival) { const fr = SAVE.friends[this.rival.idx]; if (fr) fr.mine = Math.max(fr.mine || 0, score); persist(); }
-    this.overInfo = { score, prevBest, newBest, rank, entry, shards, shardsTotal: shards + this.goalShards, secs, daily, assist, rival: this.rival };
+    this.overInfo = { score, prevBest, newBest, rank, entry, secs, daily, assist, rival: this.rival };
     Platform.wake.release(); Sound.Music.setMode('menu');
     this.slowT = 0.6;
     setTimeout(() => { if (this.run === run && this.state === 'play') { this.state = 'over'; showOver(); } }, 1100);
@@ -3152,7 +3131,7 @@ function startRun(mode, seed, opts) {
   const daily = mode === 'daily', st = SAVE.settings;
   const cfg = opts && opts.cfg ? opts.cfg : daily
     ? { v: GAME_VERSION, mode: 'daily', seed: hash32('CLACK-DAILY-' + todayStr()), loadout: 'classic', pool: ALL_POOL, hard: false, assist: st.assist, perks: [], coins: 0 }
-    : { v: GAME_VERSION, mode: 'endless', seed: seed != null ? seed >>> 0 : (Math.random() * 4294967296) >>> 0, loadout: loadoutOwned(st.loadout) ? st.loadout : 'classic', pool: currentPool(), hard: st.hard && owns('mode_hard'), assist: st.assist, perks: ownedPerks(), coins: owns('perk_coins') ? 5 : 0 };
+    : { v: GAME_VERSION, mode: 'endless', seed: seed != null ? seed >>> 0 : (Math.random() * 4294967296) >>> 0, loadout: 'classic', pool: ALL_POOL, hard: !!st.hard, assist: st.assist, perks: [], coins: 0 };   // everything is in the pool from the first run
   FX.reset(); Input.reset(); Input.lx = T.W / 2; Input.ly = T.H * 0.8;
   App.run = new Run(cfg, true);
   const rec = opts && opts.ghost ? opts.ghost : daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.record : null) : SAVE.ghost;
@@ -3281,7 +3260,7 @@ function frame(now) {
   if (document.visibilityState === 'visible') Perf.sample(dt);
   pollGamepad(dt); keyboardUpdate(dt);
   let ts = 1;
-  if (App.ff) { ts = 3; App.stopT = 0; App.slowT = 0; }
+  if (App.ff) { ts = 3; App.stopT = 0; App.slowT = 0; App.ffUpdate(dt); }
   else if (App.stopT > 0) { App.stopT -= dt; ts = 0.05; } else if (App.slowT > 0) { App.slowT -= dt; ts = 0.35; }
   if (App.state === 'play' || App.state === 'over') {
     const run = App.run;
