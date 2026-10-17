@@ -40,10 +40,13 @@ button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
   background:rgba(10,28,22,.72);font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;
   top:calc(var(--sat) + 8px)}
 .iconbtn:active{transform:scale(.94)}
-#bankBtn{position:absolute;pointer-events:auto;left:50%;transform:translateX(-50%);min-height:60px;min-width:240px;max-width:calc(100% - 32px);
+#bankBtn,#ffBtn{position:absolute;pointer-events:auto;left:50%;transform:translateX(-50%);min-height:60px;min-width:240px;max-width:calc(100% - 32px);
   border:0;border-radius:18px;background:var(--accent);color:var(--accent-ink);font-size:21px;font-weight:900;padding:10px 22px;
   box-shadow:0 5px 0 #a8700c,0 8px 22px rgba(0,0,0,.45)}
-#bankBtn:active{transform:translateX(-50%) translateY(3px);box-shadow:0 2px 0 #a8700c}
+#bankBtn:active,#ffBtn:active{transform:translateX(-50%) translateY(3px);box-shadow:0 2px 0 #a8700c}
+#bankBtn,#ffBtn{white-space:nowrap}
+#ffBtn{background:var(--blue);color:#05232e;box-shadow:0 5px 0 #1f7c99,0 8px 22px rgba(0,0,0,.45)}
+#ffBtn.on{background:#ffffff;color:#05232e}
 
 /* screens */
 #screen{position:absolute;inset:0;pointer-events:auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
@@ -167,6 +170,7 @@ p,.txt{font-size:17px;line-height:1.35}
 <canvas id="game" tabindex="-1" aria-label="CLACK game board"></canvas>
 <div id="ui">
   <button id="pauseBtn" class="iconbtn hidden" aria-label="Pause">&#10074;&#10074;</button>
+  <button id="ffBtn" class="hidden" aria-label="Fast forward">⏩ FAST FORWARD 10×</button>
   <button id="bankBtn" class="hidden" aria-label="Cash out">CASH OUT &#9654;</button>
   <div id="toasts" aria-live="polite"></div>
   <div id="screen" class="hidden"></div>
@@ -2124,7 +2128,7 @@ function handleEvents(run, quiet) {
           else FX.banner('ROOM ' + e.n, 'Target ' + fmt(e.target), '#fff7e6', 1.3, 2);
         }
         Sound.resetNotes(); break;
-      case 'roomEnd': if (!quiet) App.onRoomEnd(); break;
+      case 'roomEnd': App.ff = false; if (!quiet) App.onRoomEnd(); break;
       case 'over': if (!quiet) App.onRunOver(); break;
     }
   }
@@ -2135,7 +2139,7 @@ function handleEvents(run, quiet) {
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const UI = {
-  scr: $('screen'), modal: $('modal'), cd: $('countdown'), rot: $('rotate'), pauseBtn: $('pauseBtn'), bankBtn: $('bankBtn'), toasts: $('toasts'),
+  scr: $('screen'), modal: $('modal'), cd: $('countdown'), rot: $('rotate'), pauseBtn: $('pauseBtn'), bankBtn: $('bankBtn'), ffBtn: $('ffBtn'), toasts: $('toasts'),
   name: null, back: null, bankHidden: true, bankLabel: '', vis: {},
   setVis(el, on) { const k = el.id; if (this.vis[k] === on) return; this.vis[k] = on; el.classList.toggle('hidden', !on); },
   screenOpen() { return !this.scr.classList.contains('hidden') || !this.modal.classList.contains('hidden'); },
@@ -2151,6 +2155,7 @@ const UI = {
     this.pauseBtn.style.left = left ? (L.colX + 8) + 'px' : 'auto';
     this.pauseBtn.style.right = left ? 'auto' : (L.vw - L.colX - L.colW + 8) + 'px';
     this.bankBtn.style.top = (L.trayY + 54) + 'px';
+    this.ffBtn.style.top = (L.trayY + 54) + 'px';
     this.toasts.style.top = (L.ay + 10) + 'px';
   },
   frame() {
@@ -2158,7 +2163,14 @@ const UI = {
     const play = App.state === 'play' && run && run.phase === 'play' && !App.paused && App.countdown <= 0 && !App.cdWaiting;
     this.setVis(this.pauseBtn, play && !this.screenOpen());
     const bank = play && run.canBank();
-    this.setVis(this.bankBtn, bank); this.bankHidden = !bank;
+    // fast-forward is offered once the target is met and the board is still settling
+    const ff = play && run.cleared && !bank && (run.anyMoving() || run.echoes.length > 0 || run.pendingBoom.length > 0);
+    if (!ff && App.ff) App.ff = false;              // the board settled (or the room ended): back to normal speed
+    this.setVis(this.bankBtn, bank); this.setVis(this.ffBtn, ff); this.bankHidden = !(bank || ff);
+    if (ff) {
+      const label = App.ff ? '▶ NORMAL SPEED' : '⏩ FAST FORWARD 10×';
+      if (label !== this.ffLabel) { this.ffBtn.textContent = label; this.ffBtn.classList.toggle('on', App.ff); this.ffLabel = label; }
+    }
     if (bank) {
       const left = Math.max(1, Math.ceil(T.AUTO_BANK - (run.stillTicks * T.STEP - T.STOP_HOLD)));
       const label = 'CASH OUT ▶ +' + (run.hand.length * 3) + '●  (' + left + ')';
@@ -2488,6 +2500,7 @@ document.getElementById('ui').addEventListener('click', e => {
   handleAct(el.dataset.act, el.dataset.arg);
 });
 UI.pauseBtn.addEventListener('click', e => { e.stopPropagation(); pauseGame(); });
+UI.ffBtn.addEventListener('click', e => { e.stopPropagation(); App.toggleFF(); });
 UI.bankBtn.addEventListener('click', e => { e.stopPropagation(); if (App.run && App.act({ a: 'bank' })) Sound.buy(); });
 UI.cd.addEventListener('pointerdown', e => { e.preventDefault(); if (App.cdWaiting) startCountdown(); });
 
@@ -2562,6 +2575,7 @@ window.addEventListener('keydown', e => {
   if (k === ' ' && !e.repeat) { if (App.run.hand.length) { Input.keyCharging = true; Input.keyPow = 0; Input.keyDir = 1; } e.preventDefault(); }
   if (!e.repeat && (k === 'k' || k === 'K' || k === 'x' || k === 'X' || k === 'Shift')) App.tryKick();
   if (!e.repeat && k === 'Enter' && App.run.canBank()) App.act({ a: 'bank' });
+  if (!e.repeat && (k === 'f' || k === 'F')) App.toggleFF();
   if (!e.repeat && k >= '2' && k <= '9') App.selectMarble(+k - 1);
   if (!e.repeat && k === 'Tab') { App.selectMarble(1); e.preventDefault(); }
   if (k.indexOf('Arrow') === 0) e.preventDefault();
@@ -2613,7 +2627,7 @@ function pollGamepad(dt) {
   if (pr('a') && App.run.hand.length) { Input.keyCharging = true; Input.keyPow = 0; Input.keyDir = 1; }
   if (!now.a && prev.a && Input.keyCharging) { Input.keyCharging = false; if (Input.keyPow >= T.MIN_POWER) App.tryFling({ ang: Input.keyAng, pow: Input.keyPow }); }
   if (pr('x') || pr('b')) App.tryKick();
-  if (pr('y') && App.run.canBank()) App.act({ a: 'bank' });
+  if (pr('y')) { if (App.run.canBank()) App.act({ a: 'bank' }); else App.toggleFF(); }
   if (pr('rb')) App.selectMarble(1);
   if (pr('lb') && App.run.hand.length > 1) App.selectMarble(App.run.hand.length - 1);
 }
@@ -2632,6 +2646,8 @@ const App = {
     if (run.canFling()) run.act(act);
     else this.bufferedFling = { act, until: this.time + T.INPUT_BUFFER };   // input buffering during cooldown
   },
+  ff: false,
+  toggleFF() { const run = this.run; if (!run || !run.cleared || run.phase !== 'play') return; this.ff = !this.ff; Sound.ui(); Platform.haptics.play(HAPTIC.tap); },
   tryKick() { const run = this.run; if (run && run.canKick()) run.act({ a: 'kick' }); },
   selectMarble(i) {
     const run = this.run; if (!run) return;
@@ -2712,7 +2728,7 @@ function startRun(mode, seed) {
   App.bestForMode = daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.best : 0) : SAVE.stats.bestScore;
   App.challenges = pickChallenges(daily); App.chalDone = {}; App.goalShards = 0; App.overInfo = null;
   App.ini = (SAVE.initials || 'AAA').padEnd(3, 'A').slice(0, 3).split('');
-  App.state = 'play'; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.tapHint = 0; App.bufferedFling = null;
+  App.state = 'play'; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.tapHint = 0; App.bufferedFling = null;
   UI.hide(); UI.closeModal(); UI.hideCountdown();
   Sound.Music.setMode('play'); Platform.wake.request();
   handleEvents(App.run, false);
@@ -2732,7 +2748,7 @@ function gameTick() {
 function pauseGame() {
   if (App.state !== 'play' || !App.run || App.run.phase !== 'play') return;
   if (App.paused && !App.countdown && !App.cdWaiting) return;
-  App.paused = true; App.countdown = 0; App.cdWaiting = false; UI.hideCountdown(); Input.reset();
+  App.paused = true; App.ff = false; App.countdown = 0; App.cdWaiting = false; UI.hideCountdown(); Input.reset();
   Platform.wake.release(); persist(); showPause();
 }
 function resumeGame() { UI.hide(); App.cdWaiting = false; startCountdown(); }
@@ -2780,13 +2796,15 @@ function frame(now) {
   if (document.visibilityState === 'visible') Perf.sample(dt);
   pollGamepad(dt); keyboardUpdate(dt);
   let ts = 1;
-  if (App.stopT > 0) { App.stopT -= dt; ts = 0.05; } else if (App.slowT > 0) { App.slowT -= dt; ts = 0.35; }
+  if (App.ff) { ts = 10; App.stopT = 0; App.slowT = 0; }
+  else if (App.stopT > 0) { App.stopT -= dt; ts = 0.05; } else if (App.slowT > 0) { App.slowT -= dt; ts = 0.35; }
   if (App.state === 'play' || App.state === 'over') {
     const run = App.run;
     if (run && App.state === 'play' && !App.paused && App.countdown <= 0 && run.phase === 'play') {
       App.acc += dt * ts; let n = 0;
-      while (App.acc >= T.STEP && n < T.MAX_STEPS) { gameTick(); App.acc -= T.STEP; n++; if (run.phase !== 'play') { App.acc = 0; break; } }
-      if (n >= T.MAX_STEPS) App.acc = 0;
+      const maxSteps = App.ff ? T.MAX_STEPS * 4 : T.MAX_STEPS;
+      while (App.acc >= T.STEP && n < maxSteps) { gameTick(); App.acc -= T.STEP; n++; if (run.phase !== 'play') { App.acc = 0; break; } }
+      if (n >= maxSteps) App.acc = 0;
     }
     if (run) { handleEvents(run, false); Sound.Music.setLevel(run.phase === 'play' ? run.chaosLvl : 0); }
     App.goalT += dt; if (App.goalT > 0.5 && run && run.phase === 'play') { App.goalT = 0; App.checkGoals(); }

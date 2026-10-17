@@ -18,6 +18,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 | Choose the next marble | Tap it in the tray under the board | Number keys 2–9, or Tab | Right/left bumper |
 | Cancel a shot | Drag back into the ✕ ring and let go, or touch with a second finger | Esc while charging | B while charging |
 | Kick (speed up rolling marbles) | Quick tap | K / X / Shift | X or B |
+| Fast-forward 10× (after the target is met) | Fast Forward button | F | Y |
 | Cash out early | Cash Out button | Enter | Y |
 | Pause | Top-corner button | Esc / P | Start |
 
