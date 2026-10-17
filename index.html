@@ -242,7 +242,7 @@ h3{font-family:inherit;font-weight:900;color:#ff9a45}
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 11;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 12;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -1677,10 +1677,13 @@ class Run {
   genShopItems() {
     const rng = this.rng, pool = this.cfg.pool, items = [];
     const ofR = (list, r) => { const f = list.filter(k => (RAR[k] || 'c') === r); return f.length ? f : list; };
+    const firstShop = this.roomIdx <= 3 && this.shop.reroll === 3;   // the first visit always has a marble you can afford
     for (let i = 0; i < 2; i++) {
-      const r = this.rollRarity(0), mat = rng.pick(['clay'].concat(pool.mats)), eng = [rng.pick(ofR(pool.engs, r))];
+      const r = firstShop && i === 0 ? 'c' : this.rollRarity(0), mat = rng.pick(['clay'].concat(pool.mats)), eng = [rng.pick(ofR(pool.engs, r))];
       const sz = this.rollSize();
-      items.push({ kind: 'marble', mat, eng, sz, rarity: RAR[eng[0]] || 'c', cost: 12 + (mat !== 'clay' ? 3 : 0) + (sz === 'boulder' ? 4 : sz === 'shooter' ? 2 : 0) + ({ c: 0, r: 5, l: 10 })[RAR[eng[0]] || 'c'] + rng.int(0, 3) });
+      let cost = 10 + (mat !== 'clay' ? 3 : 0) + (sz === 'boulder' ? 4 : sz === 'shooter' ? 2 : 0) + ({ c: 0, r: 5, l: 10 })[RAR[eng[0]] || 'c'] + rng.int(0, 3);
+      if (firstShop && i === 0) cost = Math.min(cost, Math.max(6, this.coins));
+      items.push({ kind: 'marble', mat, eng, sz, rarity: RAR[eng[0]] || 'c', cost });
     }
     const r = this.rollRarity(0), avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
     if (avail.length) { const ch = rng.pick(ofR(avail, r)); items.push({ kind: 'charm', charm: ch, rarity: RAR[ch] || 'c', cost: ({ c: 16, r: 21, l: 28 })[RAR[ch] || 'c'] + rng.int(0, 3) }); }
