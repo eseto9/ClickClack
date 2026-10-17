@@ -194,7 +194,7 @@ p,.txt{font-size:17px;line-height:1.35}
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 3;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 4;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -701,50 +701,83 @@ class Run {
     this.boss = null; this.jugg = null; this.orb = null; this.orbPlan = null; this.mut = null;
     const isBoss = n % T.BOSS_EVERY === 0, late = n > 10;
     if (!isBoss && ((n >= 3 && rr.chance(hard ? 0.6 : 0.42)) || late)) this.mut = rr.pick(Object.keys(MUTATORS));
-    const placed = [], yMin = 46, yMax = H - 150;
-    const free = (x, y, r) => { for (const p of placed) { const dx = p.x - x, dy = p.y - y, m = p.r + r + 16; if (dx * dx + dy * dy < m * m) return false; } return true; };
-    const mirror = rr.chance(0.5);
-    const place = (r, fn) => {
-      for (let tries = 0; tries < 50; tries++) {
-        const x = rr.range(16 + r, W - 16 - r), y = rr.range(yMin + r, yMax - r);
+    // Objects can go anywhere in the arena: marbles are dropped wherever the player likes.
+    const placed = [], pad = 16, cx = W / 2, cy = H / 2;
+    const free = (x, y, r) => { for (const p of placed) { const dx = p.x - x, dy = p.y - y, m = p.r + r + 14; if (dx * dx + dy * dy < m * m) return false; } return true; };
+    const inside = (x, y, r) => x > pad + r && x < W - pad - r && y > pad + r && y < H - pad - r;
+    const tryAt = (x, y, r, fn, a) => { if (!inside(x, y, r) || !free(x, y, r)) return 0; placed.push({ x, y, r }); fn(x, y, r, a || 0); return 1; };
+    const mirror = rr.chance(0.45);
+    const place = (r, fn, angleFn) => {
+      for (let tries = 0; tries < 60; tries++) {
+        const x = rr.range(pad + r, W - pad - r), y = rr.range(pad + r, H - pad - r), a = angleFn ? angleFn() : 0;
         if (!free(x, y, r)) continue;
-        if (mirror && Math.abs(x - W / 2) > r + 12) {
+        if (mirror && Math.abs(x - cx) > r + 12) {
           const mx = W - x; if (!free(mx, y, r)) continue;
-          placed.push({ x, y, r }, { x: mx, y, r }); fn(x, y, r); fn(mx, y, r); return 2;
+          placed.push({ x, y, r }, { x: mx, y, r }); fn(x, y, r, a); fn(mx, y, r, -a); return 2;
         }
-        placed.push({ x, y, r }); fn(x, y, r); return 1;
+        placed.push({ x, y, r }); fn(x, y, r, a); return 1;
       }
       return 0;
     };
-    const fill = (count, r, fn) => { let k = count; while (k > 0) { const rad = typeof r === 'function' ? r() : r; const got = place(rad, fn); if (!got) break; k -= got; } };
+    const fill = (count, r, fn, angleFn) => { let k = count; while (k > 0) { const rad = typeof r === 'function' ? r() : r; const got = place(rad, fn, angleFn); if (!got) break; k -= got; } };
+    // object factories
+    const bw = rr.range(36, 54), bh = rr.range(16, 22), hp = Math.min(6, 2 + Math.floor(n / 3)), blockR = Math.hypot(bw, bh) / 2 + 2;
+    const addBumper = (x, y, r) => this.bumpers.push({ x, y, r, flash: 0, id: 'b' + this.bumpers.length });
+    const addBlock = (x, y, r, a) => this.blocks.push({ x, y, w: bw, h: bh, a, c: Math.cos(a), s: Math.sin(a), hp, maxHp: hp, flash: 0, dead: false, id: 'k' + this.blocks.length });
+    const addGate = (x, y, r, a) => this.gates.push({ x, y, w: 64, h: 10, a, c: Math.cos(a), s: Math.sin(a) });
+    const blockAngle = () => rr.pick([0, 0, Math.PI / 6, -Math.PI / 6, Math.PI / 4, -Math.PI / 4, Math.PI / 3, -Math.PI / 3, 1.22, -1.22, Math.PI / 2]);
+    const gateAngle = () => rr.pick([0, 0.52, -0.52, 0.79, -0.79, 1.22, -1.22, Math.PI / 2]);
+    // bosses claim their space first
     if (isBoss) {
       const kind = BOSS_ORDER[(n / T.BOSS_EVERY - 1) % BOSS_ORDER.length];
       this.boss = { kind };
       if (kind === 'warden') {
-        const hp = 18 + n * 2;
-        this.boss.bp = { x: W / 2, y: 170, r: 30, hp, maxHp: hp, flash: 0, warden: true, id: 'warden' };
+        const hp2 = 18 + n * 2, wy = rr.pick([H * 0.3, H * 0.5, H * 0.7]);
+        this.boss.bp = { x: cx, y: wy, r: 30, hp: hp2, maxHp: hp2, flash: 0, warden: true, id: 'warden' };
         this.bumpers.push(this.boss.bp);
-        for (let x = 30; x <= W - 30; x += 50) placed.push({ x, y: 170, r: 34 });
+        for (let x = 30; x <= W - 30; x += 50) placed.push({ x, y: wy, r: 34 });
       } else if (kind === 'juggernaut') {
-        this.jugg = { x: W / 2, y: 120, px: W / 2, py: 120, vx: 0.8, vy: 0.6, r: 20, m: 8, speed: 230, spin: 0 };
-        placed.push({ x: W / 2, y: 120, r: 40 });
+        this.jugg = { x: cx, y: cy, px: cx, py: cy, vx: 0.8, vy: 0.6, r: 20, m: 8, speed: 230, spin: 0 };
+        placed.push({ x: cx, y: cy, r: 40 });
       } else if (kind === 'pit') {
-        this.boss.hole = { x: W / 2, y: 230, r: 22, id: 'pit', pit: true };
-        this.holes.push(this.boss.hole); placed.push({ x: W / 2, y: 230, r: 70 });
+        this.boss.hole = { x: cx, y: cy, r: 22, id: 'pit', pit: true };
+        this.holes.push(this.boss.hole); placed.push({ x: cx, y: cy, r: 70 });
       }
     }
-    const extraB = (this.mut === 'crowded' ? 4 : 0) + (this.boss && this.boss.kind === 'nullifier' ? 3 : 0);
-    fill(Math.min(7, 3 + Math.floor(n / 3)) + extraB, () => rr.range(15, 21), (x, y, r) => this.bumpers.push({ x, y, r, flash: 0, id: 'b' + this.bumpers.length }));
-    const bw = rr.range(36, 54), bh = rr.range(16, 22), hp = Math.min(6, 2 + Math.floor(n / 3));
-    fill(Math.min(8, 2 + Math.floor(n / 2)), Math.max(bw, bh) / 2 + 2, (x, y) => this.blocks.push({ x, y, w: bw, h: bh, hp, maxHp: hp, flash: 0, dead: false, id: 'k' + this.blocks.length }));
+    const nb = Math.min(7, 3 + Math.floor(n / 3)) + (this.mut === 'crowded' ? 4 : 0) + (this.boss && this.boss.kind === 'nullifier' ? 3 : 0);
+    const nk = Math.min(8, 2 + Math.floor(n / 2));
+    let bLeft = nb, kLeft = nk;
+    // a layout pattern gives each room a recognisable shape; leftovers are scattered
+    const layout = rr.pick(['scatter', 'ring', 'diagonal', 'zigzag', 'diamond', 'scatter']);
+    this.layout = layout;
+    if (layout === 'ring') {
+      const R = rr.range(105, 140), off = rr.range(0, Math.PI * 2), k = Math.min(bLeft, 7);
+      for (let i = 0; i < k; i++) { const t = off + i * Math.PI * 2 / k; bLeft -= tryAt(cx + Math.cos(t) * R, cy + Math.sin(t) * R * 1.45, 18, addBumper); }
+      if (kLeft > 0) kLeft -= tryAt(cx, cy, blockR, addBlock, rr.pick([0, Math.PI / 4, -Math.PI / 4]));
+    } else if (layout === 'diagonal') {
+      const flip = rr.chance(0.5), x0 = flip ? W - 60 : 60, x1 = flip ? 60 : W - 60, y0 = 70, y1 = H - 70;
+      const a = Math.atan2(y1 - y0, x1 - x0), k = Math.min(kLeft, 5);
+      for (let i = 0; i < k; i++) { const t = (i + 0.5) / k; kLeft -= tryAt(lerp(x0, x1, t), lerp(y0, y1, t), blockR, addBlock, a); }
+      for (const t of [0.25, 0.75]) if (bLeft > 0) { const side = t < 0.5 ? 1 : -1; bLeft -= tryAt(lerp(x0, x1, t) + side * 70, lerp(y0, y1, t) - 40, 18, addBumper); }
+    } else if (layout === 'zigzag') {
+      const k = Math.min(kLeft, 6);
+      for (let i = 0; i < k; i++) { const left = i % 2 === 0; kLeft -= tryAt(left ? W * 0.3 : W * 0.7, 70 + i * (H - 140) / Math.max(1, k - 1), blockR, addBlock, left ? 0.61 : -0.61); }
+      for (let i = 0; i < Math.min(bLeft, 3); i++) bLeft -= tryAt(cx, 110 + i * (H - 220) / 2, 18, addBumper);
+    } else if (layout === 'diamond') {
+      const dx = rr.range(85, 115), dy = rr.range(130, 170);
+      for (const [x, y] of [[cx, cy - dy], [cx + dx, cy], [cx, cy + dy], [cx - dx, cy]]) if (bLeft > 0) bLeft -= tryAt(x, y, 18, addBumper);
+      for (const [x, y, a] of [[cx - dx, cy - dy, Math.PI / 4], [cx + dx, cy - dy, -Math.PI / 4], [cx - dx, cy + dy, -Math.PI / 4], [cx + dx, cy + dy, Math.PI / 4]]) if (kLeft > 0) kLeft -= tryAt(x, y, blockR, addBlock, a);
+    }
+    fill(bLeft, () => rr.range(15, 21), addBumper);
+    fill(kLeft, blockR, addBlock, blockAngle);
     const nh = n >= 2 ? Math.min(3, 1 + Math.floor((n - 2) / 4)) + (hard ? 1 : 0) : 0;
     fill(nh, 30, (x, y) => this.holes.push({ x, y, r: 21, id: 'h' + this.holes.length }));
     const ns = n >= 3 ? Math.min(3, Math.floor((n - 1) / 4)) + (hard ? 1 : 0) : 0;
     fill(ns, 20, (x, y) => this.spikes.push({ x, y, r: 13, id: 's' + this.spikes.length }));
-    const ng = n >= 2 && rr.chance(0.6) ? (rr.chance(0.3) ? 2 : 1) : 0;
-    fill(ng, 34, (x, y) => this.gates.push({ x, y, w: 64, h: 10 }));
+    const ng = n >= 2 && rr.chance(0.65) ? (rr.chance(0.35) ? 2 : 1) : 0;
+    fill(ng, 36, addGate, gateAngle);
     if (rr.chance(this.mut === 'goldfever' ? 1 : T.ORB_CHANCE)) {
-      for (let i = 0; i < 40; i++) { const x = rr.range(40, W - 40), y = rr.range(60, H - 170); if (free(x, y, 14)) { this.orbPlan = { at: rr.range(4, 8), x, y }; break; } }
+      for (let i = 0; i < 40; i++) { const x = rr.range(40, W - 40), y = rr.range(40, H - 40); if (free(x, y, 14)) { this.orbPlan = { at: rr.range(4, 8), x, y }; break; } }
     }
   }
 
@@ -787,8 +820,12 @@ class Run {
       if (this.jugg) push(this.jugg.x, this.jugg.y, this.jugg.r + r + 2);
       for (const k of this.blocks) {
         if (k.dead) continue;
-        const hw = k.w / 2 + r + 1, hh = k.h / 2 + r + 1, dx = x - k.x, dy = y - k.y;
-        if (Math.abs(dx) < hw && Math.abs(dy) < hh) { if (hw - Math.abs(dx) < hh - Math.abs(dy)) x = k.x + (dx >= 0 ? hw : -hw); else y = k.y + (dy >= 0 ? hh : -hh); }
+        const hw = k.w / 2 + r + 1, hh = k.h / 2 + r + 1, c = k.c === undefined ? 1 : k.c, sn = k.s || 0;
+        let lx = (x - k.x) * c + (y - k.y) * sn, ly = -(x - k.x) * sn + (y - k.y) * c;
+        if (Math.abs(lx) < hw && Math.abs(ly) < hh) {
+          if (hw - Math.abs(lx) < hh - Math.abs(ly)) lx = lx >= 0 ? hw : -hw; else ly = ly >= 0 ? hh : -hh;
+          x = k.x + lx * c - ly * sn; y = k.y + lx * sn + ly * c;
+        }
       }
     }
     return { x: clamp(x, r + 1, T.W - r - 1), y: clamp(y, r + 1, T.H - r - 1) };
@@ -930,7 +967,8 @@ class Run {
       if (!b.alive) continue;
       for (const g of this.gates) {
         if (b.gateCd > 0) break;
-        if (Math.abs(b.x - g.x) < g.w / 2 && Math.abs(b.y - g.y) < g.h / 2 + b.r) {
+        const gdx = b.x - g.x, gdy = b.y - g.y, glx = gdx * g.c + gdy * g.s, gly = -gdx * g.s + gdy * g.c;
+        if (Math.abs(glx) < g.w / 2 && Math.abs(gly) < g.h / 2 + b.r) {
           b.gateCd = 0.8; b.charged = 3; this.award(5, b.x, b.y, 'bonus', b, null, { noChaos: true }); this.emit('gate', { x: g.x, y: g.y });
         }
       }
@@ -1001,17 +1039,22 @@ class Run {
     if (kick) { b.vx += nx * kick; b.vy += ny * kick; }
     return imp;
   }
+  // Circle vs rotated box: work in the box's own frame, then rotate the result back.
   hitBox(b, k, e) {
-    const hw = k.w / 2, hh = k.h / 2;
-    const cx = clamp(b.x, k.x - hw, k.x + hw), cy = clamp(b.y, k.y - hh, k.y + hh);
-    const dx = b.x - cx, dy = b.y - cy, d2 = dx * dx + dy * dy;
+    const c = k.c === undefined ? 1 : k.c, sn = k.s || 0, hw = k.w / 2, hh = k.h / 2;
+    const dx0 = b.x - k.x, dy0 = b.y - k.y;
+    const lx = dx0 * c + dy0 * sn, ly = -dx0 * sn + dy0 * c;
+    const qx = clamp(lx, -hw, hw), qy = clamp(ly, -hh, hh);
+    const ex = lx - qx, ey = ly - qy, d2 = ex * ex + ey * ey;
     if (d2 >= b.r * b.r) return -1;
-    let nx, ny;
+    let nlx, nly, px, py;
     if (d2 < 1e-9) {
-      const px = hw - Math.abs(b.x - k.x), py = hh - Math.abs(b.y - k.y);
-      if (px < py) { nx = (b.x >= k.x) ? 1 : -1; ny = 0; b.x = k.x + nx * (hw + b.r); }
-      else { nx = 0; ny = (b.y >= k.y) ? 1 : -1; b.y = k.y + ny * (hh + b.r); }
-    } else { const d = Math.sqrt(d2); nx = dx / d; ny = dy / d; b.x = cx + nx * b.r; b.y = cy + ny * b.r; }
+      const ox = hw - Math.abs(lx), oy = hh - Math.abs(ly);
+      if (ox < oy) { nlx = lx >= 0 ? 1 : -1; nly = 0; px = nlx * (hw + b.r); py = ly; }
+      else { nlx = 0; nly = ly >= 0 ? 1 : -1; px = lx; py = nly * (hh + b.r); }
+    } else { const d = Math.sqrt(d2); nlx = ex / d; nly = ey / d; px = qx + nlx * b.r; py = qy + nly * b.r; }
+    const nx = nlx * c - nly * sn, ny = nlx * sn + nly * c;
+    b.x = k.x + px * c - py * sn; b.y = k.y + px * sn + py * c;
     const vn = b.vx * nx + b.vy * ny; let imp = 0;
     if (vn < 0) { imp = -vn; b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; }
     return imp;
@@ -1683,11 +1726,14 @@ function drawWorld(g, run, alpha, t, dtF) {
   const quality = Perf.q;
   // gates
   for (const gt of run.gates) {
-    g.fillStyle = 'rgba(255,209,102,.18)'; g.fillRect(gt.x - gt.w / 2, gt.y - gt.h / 2, gt.w, gt.h);
+    g.save(); g.translate(gt.x, gt.y); g.rotate(gt.a || 0);
+    g.fillStyle = 'rgba(255,209,102,.18)'; g.fillRect(-gt.w / 2, -gt.h / 2, gt.w, gt.h);
     g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.setLineDash([5, 5]); g.lineDashOffset = -t * 20;
-    g.beginPath(); g.moveTo(gt.x - gt.w / 2, gt.y); g.lineTo(gt.x + gt.w / 2, gt.y); g.stroke(); g.setLineDash([]);
-    g.fillStyle = '#ffd166'; circle(g, gt.x - gt.w / 2, gt.y, 4); circle(g, gt.x + gt.w / 2, gt.y, 4);
-    g.font = font(900, 11); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd166'; g.fillText('×2', gt.x, gt.y - 12);
+    g.beginPath(); g.moveTo(-gt.w / 2, 0); g.lineTo(gt.w / 2, 0); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#ffd166'; circle(g, -gt.w / 2, 0, 4); circle(g, gt.w / 2, 0, 4);
+    g.restore();
+    const lx = -(gt.s || 0) * 13, ly = -(gt.c === undefined ? 1 : gt.c) * 13;   // label sits beside the gate, upright
+    g.font = font(900, 11); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd166'; g.fillText('×2', gt.x + (ly > 0 ? -lx : lx), gt.y - Math.abs(ly));
   }
   // holes
   for (const h of run.holes) {
@@ -1708,15 +1754,17 @@ function drawWorld(g, run, alpha, t, dtF) {
   // blocks
   for (const k of run.blocks) {
     if (k.dead) continue;
-    const x = k.x - k.w / 2, y = k.y - k.h / 2;
-    g.fillStyle = 'rgba(0,0,0,.3)'; rrect(g, x + 2, y + 4, k.w, k.h, 5); g.fill();
+    const x = -k.w / 2, y = -k.h / 2;
+    g.save(); g.translate(k.x + 2, k.y + 4); g.rotate(k.a || 0); g.fillStyle = 'rgba(0,0,0,.3)'; rrect(g, x, y, k.w, k.h, 5); g.fill(); g.restore();
+    g.save(); g.translate(k.x, k.y); g.rotate(k.a || 0);
     g.fillStyle = theme.block2; rrect(g, x, y + 3, k.w, k.h, 5); g.fill();
     g.fillStyle = theme.block; rrect(g, x, y, k.w, k.h - 2, 5); g.fill();
     if (k.hp < k.maxHp) { g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + k.w * 0.3, y); g.lineTo(x + k.w * 0.42, y + k.h * 0.5); g.lineTo(x + k.w * 0.34, y + k.h - 2); if (k.hp < k.maxHp / 2) { g.moveTo(x + k.w * 0.7, y + k.h - 2); g.lineTo(x + k.w * 0.6, y + k.h * 0.4); } g.stroke(); }
     const n = Math.max(0, Math.ceil(k.hp)), pw = Math.min(6, (k.w - 8) / Math.max(1, n));
     g.fillStyle = 'rgba(10,30,40,.75)';
-    for (let i = 0; i < n; i++) circle(g, k.x - (n - 1) * pw / 2 + i * pw, k.y - 1, 1.8);
+    for (let i = 0; i < n; i++) circle(g, -(n - 1) * pw / 2 + i * pw, -1, 1.8);
     if (k.flash > 0) { g.globalAlpha = k.flash; g.fillStyle = '#fff'; rrect(g, x, y, k.w, k.h, 5); g.fill(); g.globalAlpha = 1; k.flash = Math.max(0, k.flash - dtF * 6); }
+    g.restore();
   }
   // bumpers
   for (const bp of run.bumpers) {
@@ -1792,7 +1840,11 @@ function traceAim(run, x, y, ang, len, bounces) {
     if (y < r || y > T.H - r) { if (bounces-- <= 0) break; dy = -dy; y = clamp(y, r, T.H - r); pts.push(x, y); }
     for (const bp of run.bumpers) { const ex = x - bp.x, ey = y - bp.y; if (ex * ex + ey * ey < (bp.r + r) * (bp.r + r)) { hit = true; break; } }
     if (!hit) for (const m of run.marbles) { if (!m.alive) continue; const ex = x - m.x, ey = y - m.y; if (ex * ex + ey * ey < (m.r + r) * (m.r + r)) { hit = true; break; } }
-    if (!hit) for (const k of run.blocks) { if (!k.dead && Math.abs(x - k.x) < k.w / 2 + r && Math.abs(y - k.y) < k.h / 2 + r) { hit = true; break; } }
+    if (!hit) for (const k of run.blocks) {
+      if (k.dead) continue;
+      const lx = (x - k.x) * k.c + (y - k.y) * k.s, ly = -(x - k.x) * k.s + (y - k.y) * k.c;
+      if (Math.abs(lx) < k.w / 2 + r && Math.abs(ly) < k.h / 2 + r) { hit = true; break; }
+    }
     if (hit) break;
   }
   pts.push(x, y);
