@@ -1,6 +1,6 @@
 # ClickClack
 
-**CLACK** is a one-thumb marble roguelite for phones, set on a lamp-lit mahogany and velvet table with polished brass bumpers and glass marbles. Drop a marble anywhere, pull back, let go, and make everything collide. Every collision scores. Reach the room's target to move on.
+**CLACK** is a one-thumb marble roguelite for phones, set on a neon arcade table: deep indigo felt, glowing orange bumpers and a neon-trimmed frame. Drop a marble anywhere, pull back, let go, and make everything collide. Every collision scores. Reach the room's target to move on.
 
 The whole game is one offline HTML file ([index.html](index.html)) with no assets, libraries or network calls.
 
@@ -18,7 +18,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 | Action | Touch | Keyboard | Gamepad |
 |---|---|---|---|
 | Place and fling | Touch anywhere to drop the marble there, pull back, release | Arrows/WASD move the drop point, Q/E aim, hold and release Space | Left stick moves, right stick aims, hold and release A |
-| Choose the next marble | Tap it in the tray under the board | Number keys 2–9, or Tab | Right/left bumper |
+| Choose the next marble | Drag it to the first spot in the tray (or tap it) | Number keys 2–9, or Tab | Right/left bumper |
 | See your whole bag (pauses) | Tap the bag icon left of the tray | — | — |
 | Cancel a shot | Drag back into the ✕ ring and let go, or touch with a second finger | Esc while charging | B while charging |
 | Kick (speed up rolling marbles) | Quick tap | K / X / Shift | X or B |
@@ -29,14 +29,14 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 ## How a run works
 
 1. You start with **4 Clay marbles and a Clay Shooter**. Each room deals 5 at random from your bag (the bag icon under the board shows how many you own).
-2. Pick which marble to throw next from the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
+2. Drag the marble you want to the first spot in the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
 3. Hit the target score to clear the room, then **pick your path**: a Standard room, or one special room type (Gold, Calm, Elite or Wild).
 4. The shop opens after every third room (rooms 2, 5, 8...). Coins are tight: expect to afford one or two things per visit. After other rooms there's sometimes a free powerup (1 of 3; always after room 1 and boss rooms).
 5. If your last marble stops short of the target, the run ends.
 
 Every run uses a random seed, and every engraving, material and charm can show up from your very first run.
 
-**Scoring:** bumpers, blocks, stars and especially marble-on-marble hits score points. **Every hit makes that marble worth ×1.01 more for the rest of the room** (shown as a small gold tag over it), even after it stops, so hitting a well-travelled marble later pays extra. Points are also multiplied by marble level, material and size, then by the **Chaos Meter** (×1 → ×2 → ×3 → ×5 → ×8 RIOT), which fills with every hit and drains when things go quiet. Early rooms' targets are based on what's on the board, so touching everything gets you there or close.
+**Scoring:** bumpers, blocks, stars and especially marble-on-marble hits score points. **Every hit makes that marble 1% bigger (and heavier) for the rest of the room**, up to 1.6×, so busy marbles grow into wrecking balls that hit more things. Points are multiplied by marble level, material and size, then by the **Chaos Meter** (×1 → ×2 → ×3 → ×5 → ×8 RIOT), which fills with every hit and drains when things go quiet. Early rooms' targets are based on what's on the board, so touching everything gets you there or close.
 
 **Marble sizes:** Peewee (small and quick), standard, Shooter (bigger, heavier, ×1.25) and Boulder (huge, ×1.5).
 
@@ -54,7 +54,7 @@ Every run uses a random seed, and every engraving, material and charm can show u
 
 ## Settings
 
-Sound and music start **muted**; tap the Sound chip on the title screen or use Settings to turn them on. Settings also has haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, table themes (Emerald, Burgundy, Sapphire, Onyx, High Contrast) and Assist mode. Hard mode is a toggle on the title screen.
+Sound and music start **muted**; tap the Sound chip on the title screen or use Settings to turn them on. Settings also has haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, table themes (Dusk, Ocean, Ember, Forest, High Contrast) and Assist mode. Hard mode is a toggle on the title screen.
 
 ## Technical notes
 
