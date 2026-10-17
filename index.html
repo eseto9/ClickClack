@@ -792,6 +792,10 @@ class Run {
     switch (a.a) {
       case 'fling': if (!this.canFling()) return false; this.launch(a.x, a.y, a.g, a.p); return true;
       case 'kick': if (!this.canKick()) return false; this.doKick(); return true;
+      case 'select': {   // move the chosen hand marble to the front so it is thrown next
+        if (this.phase !== 'play' || !(a.i > 0 && a.i < this.hand.length)) return false;
+        this.hand.unshift(this.hand.splice(a.i, 1)[0]); return true;
+      }
       case 'bank': if (!this.canBank()) return false; this.endRoom(true); return true;
       case 'card': return this.pickCard(a.i);
       case 'skip': if (this.phase !== 'reward') return false; this.coins += 3; this.toShop(); return true;
@@ -1924,19 +1928,29 @@ function drawHUD(g, run, t) {
   g.fillStyle = 'rgba(0,0,0,.55)';
   for (let i = 1; i < T.CHAOS_LEVELS.length; i++) g.fillRect(mx0 + mw * T.CHAOS_LEVELS[i].at / T.CHAOS_MAX - 1, cy - 7, 2, 14);
 }
+// Hand marbles in the tray: tap one to throw it next.
+function trayLayout(run) {
+  const maxShow = Math.max(1, Math.min(7, Math.floor((L.colW - 20) / 50))), shown = Math.min(run.hand.length, maxShow), sp = 50;
+  return { maxShow, shown, sp, y: L.trayY + 30, startX: L.colX + L.colW / 2 - (shown - 1) * sp / 2 };
+}
+function traySlotAt(run, px, py) {
+  const tl = trayLayout(run);
+  if (Math.abs(py - tl.y) > 30) return -1;
+  for (let i = 0; i < tl.shown; i++) if (Math.abs(px - (tl.startX + i * tl.sp)) <= tl.sp / 2) return i;
+  return -1;
+}
 function drawTray(g, run, t) {
   const y0 = L.trayY, cx = L.colX + L.colW / 2, n = run.hand.length;
   const showBank = !UI.bankHidden;
-  if (n > 0 && !showBank) {
-    const maxShow = 7, shown = Math.min(n, maxShow), sp = 46, R0 = 17;
-    const startX = cx - (shown - 1) * sp / 2;
+  if (n > 0) {
+    const tl = trayLayout(run), maxShow = tl.maxShow, shown = tl.shown, sp = tl.sp, R0 = 17, startX = tl.startX;
     for (let i = 0; i < shown; i++) {
       const m = run.hand[i], R = i === 0 ? 21 : R0, x = startX + i * sp, y = y0 + 30;
       if (i === 0) { g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, R + 5, 0, TAU); g.stroke(); }
       drawMarble(g, x, y, R, R * L.dpr, m.mat, m.eng, 0, i === 0 ? 1 : 0.85);
     }
     if (n > maxShow) txt(g, '+' + (n - maxShow), startX + shown * sp - 10, y0 + 30, 16, '#cfe0d6', 'left', 900);
-  } else if (!showBank) {
+  } else {
     txt(g, run.cleared ? 'Target met ✓' : 'Settling…', cx, y0 + 30, 18, run.cleared ? '#8be28b' : '#cfe0d6', 'center', 900);
   }
   if (!showBank) {
@@ -2502,6 +2516,8 @@ canvas.addEventListener('pointerdown', e => {
     if (Input.aiming) { Input.pid = null; Input.aiming = false; Sound.deny(); Platform.haptics.play([10]); }
     return;
   }
+  const slot = traySlotAt(App.run, e.clientX, e.clientY);
+  if (slot >= 0) { App.selectMarble(slot); return; }        // tap a marble in the tray to throw it next
   try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
   Input.pid = e.pointerId; Input.sx = Input.x = e.clientX; Input.sy = Input.y = e.clientY; Input.t0 = performance.now(); Input.aiming = false;
   Input.lx = Input.worldX(e.clientX); Input.ly = Input.worldY(e.clientY);   // the marble drops where the finger lands
@@ -2546,6 +2562,8 @@ window.addEventListener('keydown', e => {
   if (k === ' ' && !e.repeat) { if (App.run.hand.length) { Input.keyCharging = true; Input.keyPow = 0; Input.keyDir = 1; } e.preventDefault(); }
   if (!e.repeat && (k === 'k' || k === 'K' || k === 'x' || k === 'X' || k === 'Shift')) App.tryKick();
   if (!e.repeat && k === 'Enter' && App.run.canBank()) App.act({ a: 'bank' });
+  if (!e.repeat && k >= '2' && k <= '9') App.selectMarble(+k - 1);
+  if (!e.repeat && k === 'Tab') { App.selectMarble(1); e.preventDefault(); }
   if (k.indexOf('Arrow') === 0) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -2596,6 +2614,8 @@ function pollGamepad(dt) {
   if (!now.a && prev.a && Input.keyCharging) { Input.keyCharging = false; if (Input.keyPow >= T.MIN_POWER) App.tryFling({ ang: Input.keyAng, pow: Input.keyPow }); }
   if (pr('x') || pr('b')) App.tryKick();
   if (pr('y') && App.run.canBank()) App.act({ a: 'bank' });
+  if (pr('rb')) App.selectMarble(1);
+  if (pr('lb') && App.run.hand.length > 1) App.selectMarble(App.run.hand.length - 1);
 }
 
 /* =========================== 11. APP / MAIN LOOP =========================== */
@@ -2613,6 +2633,10 @@ const App = {
     else this.bufferedFling = { act, until: this.time + T.INPUT_BUFFER };   // input buffering during cooldown
   },
   tryKick() { const run = this.run; if (run && run.canKick()) run.act({ a: 'kick' }); },
+  selectMarble(i) {
+    const run = this.run; if (!run) return;
+    if (run.act({ a: 'select', i })) { Sound.card(); Platform.haptics.play(HAPTIC.tap); }
+  },
   afterChoice() {
     const run = this.run;
     if (run.phase === 'pick') showPick(false);

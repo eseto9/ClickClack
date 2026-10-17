@@ -15,6 +15,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 | Action | Touch | Keyboard | Gamepad |
 |---|---|---|---|
 | Place and fling | Touch anywhere to drop the marble there, pull back, release | Arrows/WASD move the drop point, Q/E aim, hold and release Space | Left stick moves, right stick aims, hold and release A |
+| Choose the next marble | Tap it in the tray under the board | Number keys 2–9, or Tab | Right/left bumper |
 | Cancel a shot | Drag back into the ✕ ring and let go, or touch with a second finger | Esc while charging | B while charging |
 | Kick (speed up rolling marbles) | Quick tap | K / X / Shift | X or B |
 | Cash out early | Cash Out button | Enter | Y |
@@ -23,7 +24,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 ## How a run works
 
 1. You start with **5 Clay marbles**. Each room draws 5 from your bag.
-2. Fling them. Marbles that stop stay on the table as targets for later throws.
+2. Pick which marble to throw next from the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
 3. Hit the target score to clear the room. Pick 1 of 3 upgrades, visit the shop, go to the next room.
 4. If your last marble stops short of the target, the run ends.
 
