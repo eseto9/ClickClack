@@ -107,6 +107,12 @@ p,.txt{font-size:17px;line-height:1.35}
 .card .cdesc{font-size:16px;color:var(--muted);line-height:1.25;margin-top:2px}
 .card.charm{border-color:#b388ff} .card.charm .ctag{color:#c9a7ff}
 .card[disabled]{opacity:.4;pointer-events:none}
+.card.r{border-color:#4cc9f0}.card.r .ctag{color:#7fdcff}
+.card.l{border-color:#ffd166;animation:legend 1.6s ease-in-out infinite}.card.l .ctag{color:#ffd166}
+@keyframes legend{0%,100%{box-shadow:0 5px 0 rgba(0,0,0,.45),0 0 6px rgba(255,209,102,.3)}50%{box-shadow:0 5px 0 rgba(0,0,0,.45),0 0 26px rgba(255,209,102,.85)}}
+.rm .card.l{animation:none}
+.card.path{min-height:88px}
+.shopitem.r .snm{color:#7fdcff}.shopitem.l .snm{color:#ffd166}
 .badge{width:64px;height:64px;flex:0 0 64px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;
   background:#2a1f4a;border:2px solid #b388ff;color:#e6d9ff}
 .badge.sm{width:44px;height:44px;flex-basis:44px;font-size:22px;border-radius:12px}
@@ -131,8 +137,8 @@ p,.txt{font-size:17px;line-height:1.35}
 .shopitem.sold{opacity:.4}
 
 /* tabs */
-.tabs{display:flex;gap:8px;width:100%}
-.tabs .btn{flex:1;min-height:52px;font-size:17px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;width:100%}
+.tabs .btn{flex:1 1 28%;min-height:52px;font-size:17px}
 .tabs .btn.on{background:var(--blue);color:#05232e}
 
 /* settings */
@@ -173,7 +179,7 @@ p,.txt{font-size:17px;line-height:1.35}
 <canvas id="game" tabindex="-1" aria-label="CLACK game board"></canvas>
 <div id="ui">
   <button id="pauseBtn" class="iconbtn hidden" aria-label="Pause">&#10074;&#10074;</button>
-  <button id="ffBtn" class="hidden" aria-label="Fast forward">⏩ FAST FORWARD 10×</button>
+  <button id="ffBtn" class="hidden" aria-label="Fast forward">⏩ FAST FORWARD 3×</button>
   <button id="bankBtn" class="hidden" aria-label="Cash out">CASH OUT &#9654;</button>
   <div id="toasts" aria-live="polite"></div>
   <div id="screen" class="hidden"></div>
@@ -201,7 +207,7 @@ p,.txt{font-size:17px;line-height:1.35}
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 5;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 7;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -226,9 +232,9 @@ const T = {
   HAND: 5, KICKS: 2, KICK_MULT: 1.45, KICK_COYOTE: 0.25,
   SETTLE_AFTER: 9, SETTLE_IDLE: 20, HARD_STOP: 8,
   STOP_HOLD: 0.45, AUTO_BANK: 5,
-  TARGET_BASE: 350, TARGET_GROWTH: 1.5, LATE_GROWTH: 1.08,
+  TARGET_BASE: 450, TARGET_GROWTH: 1.75, LATE_GROWTH: 1.08,
   HARD_TARGET: 1.6, ASSIST_TARGET: 0.75, HARD_SCORE_BONUS: 0.5,
-  BOSS_EVERY: 4, MAX_MARBLES: 48, CHARM_SLOTS: 4, ENG_SLOTS: 2, MAX_LVL: 5,
+  BOSS_EVERY: 5, MAX_MARBLES: 48, CHARM_SLOTS: 4, ENG_SLOTS: 2, MAX_LVL: 5,
   ORB_CHANCE: 0.35, ORB_LIFE: 8,
   SHARDS_PER_SCORE: 400, SHARDS_SCORE_CAP: 60,
   DPR_CAP: 2,
@@ -342,6 +348,8 @@ const ENGS = {
   pinball: { name: 'Pinball', desc: 'Every bumper hit makes it faster and worth more.' },
   fuse:    { name: 'Fuse',    desc: 'Two Fuse marbles touching set off a huge explosion.' },
   prism:   { name: 'Prism',   desc: 'Its hits fill the Chaos Meter 3× faster.' },
+  blackhole: { name: 'Black Hole', desc: 'When it stops, it drags everything in for 1.6s, then bursts.' },
+  split:     { name: 'Split Shot', desc: 'When flung, it splits into 3 marbles.' },
 };
 const CHARMS = {
   wallstreet: { name: 'Wall Street',  glyph: '▥', desc: 'Wall bounces score points.' },
@@ -356,8 +364,41 @@ const CHARMS = {
   kickstart:  { name: 'Kickstarter',  glyph: '»', desc: '+2 kicks every room.' },
   daredevil:  { name: 'Daredevil',    glyph: '!',      desc: 'Near-misses pay ×3 and give a coin.' },
   piggy:      { name: 'Piggy Bank',   glyph: '¢', desc: 'Earn 1 coin of interest per 5 held (max 5).' },
+  overcharge: { name: 'Overcharge',   glyph: 'ϟ', desc: 'Chaos ×8 (RIOT) becomes ×12.' },
+  lucky7:     { name: 'Lucky Seven',  glyph: '7', desc: 'Every 7th scoring hit in a room is ×7.' },
 };
-const BASE_POOL = { mats: ['steel', 'rubber'], engs: ['spark', 'bomb', 'magnet', 'gold', 'crown', 'seed'], charms: ['wallstreet', 'tenth', 'bumpercrop', 'hotstart', 'bigbag', 'demolition'] };
+// Upgrade rarity: c = common, r = rare, l = legendary.
+const RARITY = { c: { name: 'COMMON', col: '#b9ccc1' }, r: { name: 'RARE', col: '#4cc9f0' }, l: { name: 'LEGENDARY', col: '#ffd166' } };
+const RAR = {
+  clay: 'c', steel: 'c', rubber: 'c', ice: 'c', glass: 'r', lead: 'r',
+  spark: 'c', bomb: 'c', magnet: 'c', gold: 'c', seed: 'c', crown: 'r', frost: 'r', clone: 'r', echo: 'r', pinball: 'r', fuse: 'r', prism: 'r', blackhole: 'l', split: 'l',
+  wallstreet: 'c', bumpercrop: 'c', bigbag: 'c', demolition: 'c', kickstart: 'c', daredevil: 'c', piggy: 'c', tenth: 'r', hotstart: 'r', lastshot: 'r', glassjaw: 'r', overtime: 'r', overcharge: 'l', lucky7: 'l',
+};
+// Named combos: two engravings meeting in one collision (on either marble) trigger a bonus.
+const COMBOS = [
+  { id: 'storm',   name: 'STORM CELL',     a: 'spark', b: 'clone',   bonus: 120 },
+  { id: 'chain',   name: 'CHAIN REACTION', a: 'bomb',  b: 'fuse',    bonus: 150 },
+  { id: 'court',   name: 'ROYAL COURT',    a: 'magnet', b: 'crown',  bonus: 100 },
+  { id: 'thunder', name: 'THUNDERSNOW',    a: 'spark', b: 'frost',   bonus: 110 },
+  { id: 'midas',   name: 'MIDAS TOUCH',    a: 'gold',  b: 'crown',   bonus: 100, coins: 2 },
+  { id: 'arcade',  name: 'ARCADE',         a: 'echo',  b: 'pinball', bonus: 120 },
+  { id: 'garden',  name: 'SECRET GARDEN',  a: 'seed',  b: 'magnet',  bonus: 90 },
+  { id: 'rainbow', name: 'RAINBOW',        a: 'prism', b: 'spark',   bonus: 110 },
+  { id: 'dejavu',  name: 'DÉJÀ VU', a: 'clone', b: 'echo', bonus: 120 },
+  { id: 'glacier', name: 'GLACIER',        a: 'frost', b: 'seed',    bonus: 100 },
+  { id: 'horizon', name: 'EVENT HORIZON',  a: 'blackhole', b: 'magnet', bonus: 200 },
+  { id: 'barrage', name: 'BARRAGE',        a: 'split', b: 'bomb',    bonus: 180 },
+];
+// Pick-your-path: after each room you choose what kind of room comes next.
+const PATHS = {
+  normal: { name: 'Standard Room', icon: '▶', tmult: 1,    desc: 'No twist.' },
+  gold:   { name: 'Gold Room',     icon: '●', tmult: 1.25, desc: 'Coins ×2. Target +25%.' },
+  calm:   { name: 'Calm Room',     icon: '☾', tmult: 0.7,  desc: 'Target −30%. No free powerup after.' },
+  elite:  { name: 'Elite Room',    icon: '★', tmult: 1.5,  desc: 'Target +50%. Guaranteed powerup after, with better odds of rares.' },
+  wild:   { name: 'Wild Room',     icon: '✦', tmult: 1,    desc: 'Random modifier. Points ×1.25, +5 coins.' },
+  boss:   { name: 'Boss Room',     icon: '☠', tmult: 1,    desc: 'No way around it.' },
+};
+const BASE_POOL = { mats: ['steel', 'rubber'], engs: ['spark', 'bomb', 'magnet', 'gold', 'crown', 'seed', 'blackhole', 'split'], charms: ['wallstreet', 'tenth', 'bumpercrop', 'hotstart', 'bigbag', 'demolition', 'overcharge', 'lucky7'] };
 const ALL_POOL = { mats: ['steel', 'rubber', 'glass', 'ice', 'lead'], engs: Object.keys(ENGS), charms: Object.keys(CHARMS) };
 const LOADOUTS = {
   classic: { name: 'Classic',        desc: '5 Clay marbles.', bag: [['clay', [], 5]] },
@@ -374,13 +415,15 @@ const MUTATORS = {
   goldfever: { name: 'GOLD FEVER',   desc: 'Golden orb guaranteed. Coins ×2.' },
   crowded:   { name: 'BUMPER PARTY', desc: 'Extra bumpers everywhere.' },
 };
+// Bosses (every 5th room): the target is their health, and they attack until it hits zero.
 const BOSSES = {
-  warden:     { name: 'THE WARDEN', desc: 'Smash the moving bumper for a jackpot.' },
-  juggernaut: { name: 'JUGGERNAUT', desc: 'A heavy ball that never stops. Hits pay big.' },
-  pit:        { name: 'THE PIT',    desc: 'The hole in the middle keeps growing.' },
-  nullifier:  { name: 'NULLIFIER',  desc: 'Marble-on-marble hits score nothing. Bumpers ×2.' },
+  warden:     { name: 'THE WARDEN',  desc: 'Fires shockwaves. Smash its bumper for a jackpot.' },
+  crusher:    { name: 'THE CRUSHER', desc: 'The walls keep closing in. Win fast.' },
+  spinner:    { name: 'THE SPINNER', desc: 'A spinning arm sweeps the board, faster as it weakens.' },
+  juggernaut: { name: 'JUGGERNAUT',  desc: 'A heavy ball that never stops, and charges.' },
+  glutton:    { name: 'THE GLUTTON', desc: 'A growing pit that eats marbles from your hand.' },
 };
-const BOSS_ORDER = ['warden', 'juggernaut', 'pit', 'nullifier'];
+const BOSS_ORDER = ['warden', 'crusher', 'spinner', 'juggernaut', 'glutton'];
 const THEMES = {
   felt:     { name: 'Felt',     bg: '#0b1f18', board: '#175c45', board2: '#0f4433', rim: '#f1dfbd', rail: '#1f7055', bumper: '#f2b544', bumper2: '#8a5a12', block: '#4cc9f0', block2: '#1a6f8c', ink: '#fff7e6', hole: '#020c08' },
   walnut:   { name: 'Walnut',   bg: '#140d08', board: '#6b4426', board2: '#553419', rim: '#f4d8a8', rail: '#7a5030', bumper: '#ffd166', bumper2: '#9a6b00', block: '#7ae0c3', block2: '#2a7d66', ink: '#fff3e0', hole: '#120a04' },
@@ -461,7 +504,7 @@ function defaultSave() {
     settings: { sound: false, music: false, haptics: true, reducedMotion: false, lowPower: false, sensitivity: 1, hand: 'right', assist: false, theme: 'felt', hard: false, loadout: 'classic' },
     shards: 0, owned: {}, achievements: {}, initials: 'AAA', tutorialDone: false,
     stats: { runs: 0, bestScore: 0, bestRoom: 0, bestChain: 0, bestChaos: 1, longestRun: 0, totalScore: 0, totalRooms: 0, golden: 0, glass: 0, kisses: 0, shardsEarned: 0, dailyRuns: 0 },
-    top10: [], daily: { date: '', best: 0, record: null }, ghost: null,
+    top10: [], daily: { date: '', best: 0, record: null }, ghost: null, combos: {}, friends: [],
   };
 }
 function deepFill(target, defs) {
@@ -656,6 +699,7 @@ const Sound = (() => {
    that powers ghosts, daily seeds and (later) server-side validation. */
 // The shop opens after rooms 2, 5, 8, 11...
 function isShopRoom(n) { return n % 3 === 2; }
+function roomTarget(n, cfg, path) { return Math.round(computeTarget(n, cfg) * (PATHS[path] || PATHS.normal).tmult / 5) * 5; }
 function computeTarget(n, cfg) {
   let t = T.TARGET_BASE * Math.pow(T.TARGET_GROWTH, n - 1);
   if (n > 10) t *= Math.pow(T.LATE_GROWTH, n - 10);   // late-game soft cap pressure
@@ -675,7 +719,7 @@ class Run {
     const lo = LOADOUTS[cfg.loadout] || LOADOUTS.classic;
     for (const [mat, eng, n] of lo.bag) for (let i = 0; i < n; i++) this.bag.push(this.newMarble(mat, eng.slice(), 1));
     this.coins += lo.coins || 0;
-    this.stats = { collisions: 0, mmHits: 0, bestChaos: 1, bestChain: 0, rooms: 0, near: 0, clutch: 0, kiss: 0, golden: 0, blocks: 0, bombs: 0, glass: 0, lost: 0, kicks: 0, bestThrow: 0, maxLeftover: 0, oneMarble: 0, bosses: 0, playTicks: 0, throws: 0 };
+    this.stats = { collisions: 0, mmHits: 0, bestChaos: 1, bestChain: 0, rooms: 0, near: 0, clutch: 0, kiss: 0, golden: 0, blocks: 0, bombs: 0, glass: 0, lost: 0, kicks: 0, bestThrow: 0, maxLeftover: 0, oneMarble: 0, bosses: 0, playTicks: 0, throws: 0, combos: {} };
     this.bd = { hits: 0, bumpers: 0, blocks: 0, bonus: 0, leftover: 0, hard: 0 };
     this.phase = 'init'; this.offer = null; this.shop = null; this.pending = null; this.lastClear = null;
     this.startRoom(1);
@@ -684,13 +728,14 @@ class Run {
   emit(type, data) { if (this.emitOn) { data = data || {}; data.type = type; this.events.push(data); } }
   has(c) { return this.charms.indexOf(c) >= 0; }
   levelOf(c) { const L = T.CHAOS_LEVELS; for (let i = L.length - 1; i > 0; i--) if (c >= L[i].at) return i; return 0; }
-  get chaosMult() { return T.CHAOS_LEVELS[this.chaosLvl].mult; }
+  get chaosMult() { const m = T.CHAOS_LEVELS[this.chaosLvl].mult; return m === 8 && this.has('overcharge') ? 12 : m; }
   valOf(b) { return b.val * (1 + 0.5 * (b.lvl - 1)) * (1 + 0.15 * b.pin); }
   glassThresh() { return this.has('glassjaw') ? 300 : 460; }
 
   /* ----------------------------- rooms ----------------------------- */
-  startRoom(n) {
-    this.roomIdx = n; this.target = computeTarget(n, this.cfg); this.roomScore = 0; this.roomTick = 0;
+  startRoom(n, path) {
+    this.path = path || 'normal'; this.inset = 0; this.comboCd = {};
+    this.roomIdx = n; this.target = roomTarget(n, this.cfg, this.path); this.roomScore = 0; this.roomTick = 0;
     this.rr = RNG(hash32('room|' + this.cfg.seed + '|' + n));
     this.buildRoom(n);
     const order = this.rr.shuffle(this.bag.slice());
@@ -702,14 +747,15 @@ class Run {
     this.throws = 0; this.cooldown = 0; this.firstThrow = -1; this.lastThrow = -1; this.lastMove = -99999; this.cleared = false; this.stillTicks = 0;
     this.hitCount = 0; this.goldCoins = 0; this.echoes = []; this.pendingBoom = []; this.pendingSpawn = []; this.pendingShatter = []; this.throwScores = [];
     this.dirty = false; this.phase = 'play';
-    this.emit('room', { n, target: this.target, boss: this.boss ? this.boss.kind : null, mut: this.mut });
+    this.emit('room', { n, target: this.target, boss: this.boss ? this.boss.kind : null, mut: this.mut, path: this.path });
   }
   buildRoom(n) {
     const rr = this.rr, W = T.W, H = T.H, hard = !!this.cfg.hard;
     this.bumpers = []; this.blocks = []; this.holes = []; this.spikes = []; this.gates = [];
+    this.pads = []; this.vortexes = []; this.multis = []; this.stars = []; this.starsGot = 0; this.frenzy = 0; this.pendingMulti = [];
     this.boss = null; this.jugg = null; this.orb = null; this.orbPlan = null; this.mut = null;
     const isBoss = n % T.BOSS_EVERY === 0, late = n > 10;
-    if (!isBoss && ((n >= 3 && rr.chance(hard ? 0.6 : 0.42)) || late)) this.mut = rr.pick(Object.keys(MUTATORS));
+    if (!isBoss && ((n >= 3 && rr.chance(hard ? 0.6 : 0.42)) || late || this.path === 'wild')) this.mut = rr.pick(Object.keys(MUTATORS));
     // Objects can go anywhere in the arena: marbles are dropped wherever the player likes.
     const placed = [], pad = 16, cx = W / 2, cy = H / 2;
     const free = (x, y, r) => { for (const p of placed) { const dx = p.x - x, dy = p.y - y, m = p.r + r + 14; if (dx * dx + dy * dy < m * m) return false; } return true; };
@@ -733,13 +779,13 @@ class Run {
     const bw = rr.range(36, 54), bh = rr.range(16, 22), hp = Math.min(6, 2 + Math.floor(n / 3)), blockR = Math.hypot(bw, bh) / 2 + 2;
     const addBumper = (x, y, r) => this.bumpers.push({ x, y, r, flash: 0, id: 'b' + this.bumpers.length });
     const addBlock = (x, y, r, a) => this.blocks.push({ x, y, w: bw, h: bh, a, c: Math.cos(a), s: Math.sin(a), hp, maxHp: hp, flash: 0, dead: false, id: 'k' + this.blocks.length });
-    const addGate = (x, y, r, a) => this.gates.push({ x, y, w: 64, h: 10, a, c: Math.cos(a), s: Math.sin(a) });
+    const addGate = (x, y, r, a) => this.gates.push({ x, y, w: 64, h: 10, a, c: Math.cos(a), s: Math.sin(a), mult: n >= 4 && rr.chance(0.25) ? 3 : 2 });
     const blockAngle = () => rr.pick([0, 0, Math.PI / 6, -Math.PI / 6, Math.PI / 4, -Math.PI / 4, Math.PI / 3, -Math.PI / 3, 1.22, -1.22, Math.PI / 2]);
     const gateAngle = () => rr.pick([0, 0.52, -0.52, 0.79, -0.79, 1.22, -1.22, Math.PI / 2]);
     // bosses claim their space first
     if (isBoss) {
       const kind = BOSS_ORDER[(n / T.BOSS_EVERY - 1) % BOSS_ORDER.length];
-      this.boss = { kind };
+      this.boss = { kind, atk: 0, warn: 0 };
       if (kind === 'warden') {
         const hp2 = 18 + n * 2, wy = rr.pick([H * 0.3, H * 0.5, H * 0.7]);
         this.boss.bp = { x: cx, y: wy, r: 30, hp: hp2, maxHp: hp2, flash: 0, warden: true, id: 'warden' };
@@ -748,9 +794,12 @@ class Run {
       } else if (kind === 'juggernaut') {
         this.jugg = { x: cx, y: cy, px: cx, py: cy, vx: 0.8, vy: 0.6, r: 20, m: 8, speed: 230, spin: 0 };
         placed.push({ x: cx, y: cy, r: 40 });
-      } else if (kind === 'pit') {
+      } else if (kind === 'glutton') {
         this.boss.hole = { x: cx, y: cy, r: 22, id: 'pit', pit: true };
-        this.holes.push(this.boss.hole); placed.push({ x: cx, y: cy, r: 70 });
+        this.holes.push(this.boss.hole); placed.push({ x: cx, y: cy, r: 66 });
+      } else if (kind === 'spinner') {
+        const arm = { x: cx, y: cy, w: 170, h: 14, a: 0, c: 1, s: 0, hp: 1, maxHp: 1, flash: 0, dead: false, id: 'arm', spin: true, w0: 0.9 };
+        this.blocks.push(arm); this.boss.arm = arm; placed.push({ x: cx, y: cy, r: 96 });
       }
     }
     const nb = Math.min(7, 3 + Math.floor(n / 3)) + (this.mut === 'crowded' ? 4 : 0) + (this.boss && this.boss.kind === 'nullifier' ? 3 : 0);
@@ -761,23 +810,23 @@ class Run {
     this.layout = layout;
     if (layout === 'ring') {
       const R = rr.range(105, 140), off = rr.range(0, Math.PI * 2), k = Math.min(bLeft, 7);
-      for (let i = 0; i < k; i++) { const t = off + i * Math.PI * 2 / k; bLeft -= tryAt(cx + Math.cos(t) * R, cy + Math.sin(t) * R * 1.45, 18, addBumper); }
+      for (let i = 0; i < k; i++) { const t = off + i * Math.PI * 2 / k; bLeft -= tryAt(cx + Math.cos(t) * R, cy + Math.sin(t) * R * 1.45, 23, addBumper); }
       if (kLeft > 0) kLeft -= tryAt(cx, cy, blockR, addBlock, rr.pick([0, Math.PI / 4, -Math.PI / 4]));
     } else if (layout === 'diagonal') {
       const flip = rr.chance(0.5), x0 = flip ? W - 60 : 60, x1 = flip ? 60 : W - 60, y0 = 70, y1 = H - 70;
       const a = Math.atan2(y1 - y0, x1 - x0), k = Math.min(kLeft, 5);
       for (let i = 0; i < k; i++) { const t = (i + 0.5) / k; kLeft -= tryAt(lerp(x0, x1, t), lerp(y0, y1, t), blockR, addBlock, a); }
-      for (const t of [0.25, 0.75]) if (bLeft > 0) { const side = t < 0.5 ? 1 : -1; bLeft -= tryAt(lerp(x0, x1, t) + side * 70, lerp(y0, y1, t) - 40, 18, addBumper); }
+      for (const t of [0.25, 0.75]) if (bLeft > 0) { const side = t < 0.5 ? 1 : -1; bLeft -= tryAt(lerp(x0, x1, t) + side * 70, lerp(y0, y1, t) - 40, 23, addBumper); }
     } else if (layout === 'zigzag') {
       const k = Math.min(kLeft, 6);
       for (let i = 0; i < k; i++) { const left = i % 2 === 0; kLeft -= tryAt(left ? W * 0.3 : W * 0.7, 70 + i * (H - 140) / Math.max(1, k - 1), blockR, addBlock, left ? 0.61 : -0.61); }
-      for (let i = 0; i < Math.min(bLeft, 3); i++) bLeft -= tryAt(cx, 110 + i * (H - 220) / 2, 18, addBumper);
+      for (let i = 0; i < Math.min(bLeft, 3); i++) bLeft -= tryAt(cx, 110 + i * (H - 220) / 2, 23, addBumper);
     } else if (layout === 'diamond') {
       const dx = rr.range(85, 115), dy = rr.range(130, 170);
-      for (const [x, y] of [[cx, cy - dy], [cx + dx, cy], [cx, cy + dy], [cx - dx, cy]]) if (bLeft > 0) bLeft -= tryAt(x, y, 18, addBumper);
+      for (const [x, y] of [[cx, cy - dy], [cx + dx, cy], [cx, cy + dy], [cx - dx, cy]]) if (bLeft > 0) bLeft -= tryAt(x, y, 23, addBumper);
       for (const [x, y, a] of [[cx - dx, cy - dy, Math.PI / 4], [cx + dx, cy - dy, -Math.PI / 4], [cx - dx, cy + dy, -Math.PI / 4], [cx + dx, cy + dy, Math.PI / 4]]) if (kLeft > 0) kLeft -= tryAt(x, y, blockR, addBlock, a);
     }
-    fill(bLeft, () => rr.range(15, 21), addBumper);
+    fill(bLeft, () => rr.range(20, 26), addBumper);
     fill(kLeft, blockR, addBlock, blockAngle);
     const nh = n >= 2 ? Math.min(3, 1 + Math.floor((n - 2) / 4)) + (hard ? 1 : 0) : 0;
     fill(nh, 30, (x, y) => this.holes.push({ x, y, r: 21, id: 'h' + this.holes.length }));
@@ -785,6 +834,11 @@ class Run {
     fill(ns, 20, (x, y) => this.spikes.push({ x, y, r: 13, id: 's' + this.spikes.length }));
     const ng = n >= 2 && rr.chance(0.65) ? (rr.chance(0.35) ? 2 : 1) : 0;
     fill(ng, 36, addGate, gateAngle);
+    // arcade pieces: boost pads, vortexes, multiball orbs and collectible stars
+    if (n >= 2) fill(rr.chance(0.55) ? 2 : 1, 26, (x, y, r, a) => this.pads.push({ x, y, w: 46, h: 26, a, c: Math.cos(a), s: Math.sin(a), id: 'pad' + this.pads.length }), () => rr.pick([-Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, 0, Math.PI, Math.PI / 2]));
+    if (n >= 3 && rr.chance(0.45)) fill(1, 60, (x, y) => this.vortexes.push({ x, y, r: 62, id: 'vx' + this.vortexes.length }));
+    if (n >= 2 && rr.chance(0.4)) fill(1, 18, (x, y) => this.multis.push({ x, y, r: 13, got: false }));
+    fill(rr.int(3, 5), 14, (x, y) => this.stars.push({ x, y, r: 10, got: false }));
     if (rr.chance(this.mut === 'goldfever' ? 1 : T.ORB_CHANCE)) {
       for (let i = 0; i < 40; i++) { const x = rr.range(40, W - 40), y = rr.range(40, H - 40); if (free(x, y, 14)) { this.orbPlan = { at: rr.range(4, 8), x, y }; break; } }
     }
@@ -814,7 +868,7 @@ class Run {
         this.coins += this.pending.cost; this.shop.items[this.pending.slot].sold = false; this.pending = null; this.phase = 'shop'; return true;
       case 'buy': return this.buy(a.i);
       case 'reroll': if (this.phase !== 'shop' || this.coins < this.shop.reroll) return false; this.coins -= this.shop.reroll; this.shop.reroll++; this.genShopItems(); return true;
-      case 'leave': if (this.phase !== 'shop' && this.phase !== 'next') return false; this.startRoom(this.roomIdx + 1); return true;
+      case 'leave': { if (this.phase !== 'shop' && this.phase !== 'next') return false; const ps = this.paths || ['normal']; this.startRoom(this.roomIdx + 1, ps[a.i | 0] || ps[0]); return true; }
     }
     return false;
   }
@@ -825,9 +879,12 @@ class Run {
       if (d < min) { const nx = d > 1e-6 ? dx / d : 0, ny = d > 1e-6 ? dy / d : -1; x = cx + nx * min; y = cy + ny * min; }
     };
     for (let it = 0; it < 4; it++) {
-      x = clamp(x, r + 1, T.W - r - 1); y = clamp(y, r + 1, T.H - r - 1);
+      const ins = this.inset || 0; x = clamp(x, r + 1 + ins, T.W - r - 1 - ins); y = clamp(y, r + 1 + ins, T.H - r - 1 - ins);
       for (const h of this.holes) push(h.x, h.y, h.r + r + 6);
       for (const sp of this.spikes) push(sp.x, sp.y, sp.r + r + 6);
+      for (const v of this.vortexes) push(v.x, v.y, 20 + r);
+      for (const mb of this.multis) if (!mb.got) push(mb.x, mb.y, mb.r + r + 2);
+      for (const st of this.stars) if (!st.got) push(st.x, st.y, st.r + r + 2);
       for (const bp of this.bumpers) push(bp.x, bp.y, bp.r + r + 1);
       for (const m of this.marbles) if (m.alive) push(m.x, m.y, m.r + r + 0.5);
       if (this.jugg) push(this.jugg.x, this.jugg.y, this.jugg.r + r + 2);
@@ -841,7 +898,7 @@ class Run {
         }
       }
     }
-    return { x: clamp(x, r + 1, T.W - r - 1), y: clamp(y, r + 1, T.H - r - 1) };
+    const ins = this.inset || 0; return { x: clamp(x, r + 1 + ins, T.W - r - 1 - ins), y: clamp(y, r + 1 + ins, T.H - r - 1 - ins) };
   }
   launch(xq, yq, gq, pq) {
     const src = this.hand.shift(), mat = MATS[src.mat];
@@ -853,6 +910,16 @@ class Run {
     b.moved = true;
     if (this.hand.length === 0 && this.has('lastshot')) b.lastShot = true;
     this.marbles.push(b);
+    if (src.eng.indexOf('split') >= 0) {   // Split Shot: two more marbles fan out beside it
+      const px = -Math.sin(ang), py = Math.cos(ang);
+      for (const side of [-1, 1]) {
+        if (this.marbles.length >= T.MAX_MARBLES) break;
+        const a2 = ang + side * 0.28;
+        const c = this.makeBody({ id: src.id, mat: src.mat, eng: src.eng.filter(e => e !== 'split'), lvl: src.lvl }, clamp(p.x + px * side * mat.r * 2.3, mat.r, T.W - mat.r), clamp(p.y + py * side * mat.r * 2.3, mat.r, T.H - mat.r), Math.cos(a2) * speed * 0.92, Math.sin(a2) * speed * 0.92);
+        c.moved = true; c.throwId = b.throwId; c.lastShot = b.lastShot; this.marbles.push(c);
+        this.emit('clone', { x: c.x, y: c.y });
+      }
+    }
     this.cooldown = T.FLING_COOLDOWN;
     if (this.firstThrow < 0) this.firstThrow = this.roomTick;
     this.lastThrow = this.roomTick;
@@ -879,7 +946,7 @@ class Run {
       x, y, px: x, py: y, vx, vy, dx: 0, dy: -1, stopTick: -99999,
       alive: true, frozen: 0, charged: 0, kiss: false, bombHits: 0, bombed: false, cloned: false, fused: false,
       pin: 0, travel: 0, lastShot: false, throwId: -1, cd: new Map(), near: {}, sparkCd: 0, echoCd: 0, gateCd: 0, wallCd: 0,
-      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0,
+      clutchDone: false, moved: false, spin: 0, shard: src.mat === 'shard', bumps: 0, bhT: 0, bhDone: false, chargeMult: 2, vortT: 0, vortDone: false,
     };
   }
 
@@ -897,6 +964,7 @@ class Run {
       if (this.roomTick >= e.t) { this.echoes.splice(i, 1); this.award(e.pts, e.x, e.y, 'bonus', null, null, { flat: true, label: 'ECHO +' + e.pts }); this.emit('echo', { x: e.x, y: e.y }); }
     }
     this.orbUpdate(dt);
+    if (this.frenzy > 0) this.frenzy -= dt;
     const since = (this.roomTick - this.lastHit) * dt;
     const floor = this.has('hotstart') ? 15 : 0;
     if (since > T.CHAOS_GRACE && this.chaos > floor) {
@@ -919,6 +987,17 @@ class Run {
     const ms = this.marbles;
     const mutF = this.mut === 'slick' ? 0.5 : this.mut === 'sticky' ? 1.6 : 1;
     const settle = this.settleFactor();
+    // black holes
+    for (const a of ms) {
+      if (!a.alive || !(a.bhT > 0)) continue;
+      for (const b of ms) {
+        if (b === a || !b.alive || b.frozen > 0) continue;
+        const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy, R = 175;
+        if (d2 > R * R) continue;
+        const d = Math.sqrt(d2) || 1, f = 1500 * (1 - d / R) / b.m * dt;
+        b.vx += dx / d * f; b.vy += dy / d * f; b.moved = true;
+      }
+    }
     // magnets
     for (const a of ms) {
       if (!a.alive || a.eng.indexOf('magnet') < 0) continue;
@@ -961,6 +1040,7 @@ class Run {
       for (const k of this.blocks) {
         if (k.dead) continue;
         const imp = this.hitBox(b, k, T.BLOCK_E);
+        if (k.spin && imp >= 0) { const rx = b.x - k.x, ry = b.y - k.y; b.vx += -ry * k.w0 * 0.8; b.vy += rx * k.w0 * 0.8; }
         if (imp > T.HIT_MIN) this.onBlock(b, k, imp);
       }
       if (this.jugg) this.juggHit(b);
@@ -982,7 +1062,41 @@ class Run {
         if (b.gateCd > 0) break;
         const gdx = b.x - g.x, gdy = b.y - g.y, glx = gdx * g.c + gdy * g.s, gly = -gdx * g.s + gdy * g.c;
         if (Math.abs(glx) < g.w / 2 && Math.abs(gly) < g.h / 2 + b.r) {
-          b.gateCd = 0.8; b.charged = 3; this.award(5, b.x, b.y, 'bonus', b, null, { noChaos: true }); this.emit('gate', { x: g.x, y: g.y });
+          b.gateCd = 0.8; b.charged = 3; b.chargeMult = g.mult || 2; this.award(5, b.x, b.y, 'bonus', b, null, { noChaos: true }); this.emit('gate', { x: g.x, y: g.y, mult: g.mult || 2 });
+        }
+      }
+      for (const pd of this.pads) {   // boost pad: launches the marble along its arrows
+        const dx = b.x - pd.x, dy = b.y - pd.y, lx = dx * pd.c + dy * pd.s, ly = -dx * pd.s + dy * pd.c;
+        if (Math.abs(lx) < pd.w / 2 && Math.abs(ly) < pd.h / 2 && this.cdOk(b, pd.id, 0.6)) {
+          const sp2 = Math.sqrt(b.vx * b.vx + b.vy * b.vy), ns = Math.min(T.SPEED_CAP, Math.max(sp2 * 1.2, 720));
+          b.vx = pd.c * ns; b.vy = pd.s * ns; b.moved = true;
+          this.award(10 * this.valOf(b), b.x, b.y, 'bonus', b, null);
+          this.emit('pad', { x: pd.x, y: pd.y, a: pd.a });
+        }
+      }
+      for (const v of this.vortexes) {   // vortex: swirls marbles around for points, then spits them out
+        if (b.vortDone) continue;
+        const dx = b.x - v.x, dy = b.y - v.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+        if (d >= v.r) continue;
+        const k = 1 - d / v.r, sp2 = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        if (sp2 < 650) { b.vx += (-dy / d * 950 * k - dx / d * 280 * k) * dt; b.vy += (dx / d * 950 * k - dy / d * 280 * k) * dt; }
+        b.vortT += dt; b.moved = true;
+        if (d < 16 || b.vortT > 2.4) { b.vx = dx / d * 560; b.vy = dy / d * 560; b.vortDone = true; this.emit('vortexOut', { x: b.x, y: b.y }); }
+        if (this.cdOk(b, v.id, 0.18)) this.award(7 * this.valOf(b), b.x, b.y, 'bonus', b, null);
+      }
+      for (const mb of this.multis) {   // multiball orb
+        if (mb.got) continue;
+        const dx = b.x - mb.x, dy = b.y - mb.y, m = b.r + mb.r;
+        if (dx * dx + dy * dy < m * m) { mb.got = true; this.pendingMulti.push({ x: mb.x, y: mb.y, a: Math.atan2(b.vy, b.vx) }); this.award(50, mb.x, mb.y, 'bonus', b, null, { label: 'MULTIBALL!' }); this.emit('multi', { x: mb.x, y: mb.y }); }
+      }
+      for (const st of this.stars) {   // stars: collect them all for a bonus
+        if (st.got) continue;
+        const dx = b.x - st.x, dy = b.y - st.y, m = b.r + st.r;
+        if (dx * dx + dy * dy < m * m) {
+          st.got = true; this.starsGot++;
+          this.award(40 * this.valOf(b), st.x, st.y, 'bonus', b, null);
+          this.emit('star', { x: st.x, y: st.y });
+          if (this.starsGot === this.stars.length) { this.award(300, st.x, st.y, 'bonus', null, null, { label: 'ALL STARS!' }); this.emit('allstars', { x: st.x, y: st.y }); }
         }
       }
       if (this.orb) {
@@ -1027,13 +1141,13 @@ class Run {
     }
   }
   walls(b) {
-    const W = T.W, H = T.H, r = b.r;
+    const ins = this.inset || 0, W = T.W - ins, H = T.H - ins, r = b.r + ins;
     const e = this.mut === 'bouncy' ? Math.max(1.0, b.wallE || 0) : (b.wallE != null ? b.wallE : T.WALL_E);
     let imp = 0;
     if (b.x < r) { b.x = r; if (b.vx < 0) { imp = Math.max(imp, -b.vx); b.vx = -b.vx * e; } }
-    else if (b.x > W - r) { b.x = W - r; if (b.vx > 0) { imp = Math.max(imp, b.vx); b.vx = -b.vx * e; } }
+    else if (b.x > W - b.r) { b.x = W - b.r; if (b.vx > 0) { imp = Math.max(imp, b.vx); b.vx = -b.vx * e; } }
     if (b.y < r) { b.y = r; if (b.vy < 0) { imp = Math.max(imp, -b.vy); b.vy = -b.vy * e; } }
-    else if (b.y > H - r) { b.y = H - r; if (b.vy > 0) { imp = Math.max(imp, b.vy); b.vy = -b.vy * e; } }
+    else if (b.y > H - b.r) { b.y = H - b.r; if (b.vy > 0) { imp = Math.max(imp, b.vy); b.vy = -b.vy * e; } }
     if (imp > 0 && b.cd) this.onWall(b, imp);
   }
   onWall(b, imp) {
@@ -1082,6 +1196,14 @@ class Run {
     bp.flash = 1; b.bumps++;   // bumper-only ping-pong loses its kick (no infinite loops)
     if (b.eng.indexOf('pinball') >= 0 && b.pin < 10) b.pin++;
     if (bp.warden) { this.award(25 * this.valOf(b), b.x, b.y, 'bumpers', b, null); this.damageWarden(bp, b.m >= 2 ? 2 : 1); return; }
+    if (!bp.seed && !bp.lit) {
+      bp.lit = true;
+      const all = this.bumpers.filter(x => !x.seed && !x.warden);
+      if (all.length >= 2 && all.every(x => x.lit)) {
+        for (const x of all) x.lit = false;
+        this.frenzy = 6; this.award(250, bp.x, bp.y, 'bonus', null, null, { label: 'ALL LIT!' }); this.emit('frenzy', { x: bp.x, y: bp.y });
+      }
+    }
     let base = 10 * this.valOf(b);
     if (this.has('bumpercrop')) base *= 2;
     if (this.boss && this.boss.kind === 'nullifier') base *= 2;
@@ -1099,6 +1221,7 @@ class Run {
   }
   onBlock(b, k, imp) {
     b.bumps = 0;
+    if (k.spin) { if (this.cdOk(b, k.id, 0.15)) { this.award(12 * this.valOf(b), b.x, b.y, 'blocks', b, null); this.emit('block', { x: b.x, y: b.y }); } return; }
     if (!this.cdOk(b, k.id, 0.08)) return;
     const demo = this.has('demolition') ? 2 : 1;
     k.hp -= (b.m >= 2 || imp > 750 ? 2 : 1) * demo; k.flash = 1;
@@ -1126,12 +1249,21 @@ class Run {
   bossUpdate(dt) {
     if (!this.boss) return;
     const B = this.boss, t = this.firstThrow >= 0 ? (this.roomTick - this.firstThrow) * dt : 0;
+    const hpFrac = clamp(1 - this.roomScore / this.target, 0, 1);
     if (B.kind === 'warden' && !B.bp.dead) B.bp.x = T.W / 2 + Math.sin(t * 0.8) * (T.W / 2 - 50);
-    if (B.kind === 'pit') B.hole.r = Math.min(62, 22 + t * 1.3);
+    if (B.kind === 'glutton') B.hole.r = Math.min(56, 22 + t * 1.1);
+    if (B.kind === 'spinner') { const arm = B.arm; arm.w0 = (0.9 + 1.8 * (1 - hpFrac)) * (this.cleared ? 0.3 : 1); arm.a += arm.w0 * dt; arm.c = Math.cos(arm.a); arm.s = Math.sin(arm.a); }
+    // attacks: every 6.5s after the first throw, telegraphed 1.2s ahead; they stop once the boss is beaten
+    if (this.firstThrow >= 0 && !this.cleared && B.kind !== 'spinner') {
+      if (B.warn > 0) { B.warn -= dt; if (B.warn <= 0) { B.warn = 0; this.bossAttack(B); } }
+      else { B.atk += dt; if (B.atk >= 6.5) { B.atk = 0; B.warn = 1.2; const p = this.bossPos(); this.emit('bossWarn', { kind: B.kind, x: p.x, y: p.y }); } }
+    }
     const j = this.jugg;
     if (j) {
       j.px = j.x; j.py = j.y;
       if (this.firstThrow < 0) return;
+      if (j.charge > 0) j.charge -= dt;
+      j.speed = j.charge > 0 ? 540 : 230;
       const sp = Math.sqrt(j.vx * j.vx + j.vy * j.vy) || 1;
       j.vx = j.vx / sp * j.speed; j.vy = j.vy / sp * j.speed;      // never slows down
       j.x += j.vx * dt; j.y += j.vy * dt; j.spin += j.speed * dt / j.r;
@@ -1139,6 +1271,34 @@ class Run {
       if (j.y < j.r) { j.y = j.r; j.vy = Math.abs(j.vy); } else if (j.y > T.H - j.r) { j.y = T.H - j.r; j.vy = -Math.abs(j.vy); }
       for (const bp of this.bumpers) this.hitCircle(j, bp.x, bp.y, bp.r, 1, 0);
       for (const k of this.blocks) if (!k.dead) this.hitBox(j, k, 1);
+    }
+  }
+  bossPos() {
+    const B = this.boss;
+    if (B.kind === 'warden') return { x: B.bp.x, y: B.bp.y };
+    if (B.kind === 'juggernaut') return { x: this.jugg.x, y: this.jugg.y };
+    if (B.kind === 'glutton') return { x: B.hole.x, y: B.hole.y };
+    return { x: T.W / 2, y: T.H / 2 };
+  }
+  bossAttack(B) {
+    const p = this.bossPos();
+    if (B.kind === 'warden' && !B.bp.dead) {          // shockwave pushes marbles away
+      for (const m of this.marbles) {
+        if (!m.alive || m.frozen > 0) continue;
+        const dx = m.x - p.x, dy = m.y - p.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+        if (d > 170) continue;
+        const f = 560 * (1 - d / 170) / m.m; m.vx += dx / d * f; m.vy += dy / d * f; m.moved = true;
+      }
+      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y, r: 170 });
+    } else if (B.kind === 'crusher') {                  // walls close in
+      this.inset = Math.min(50, (this.inset || 0) + 12);
+      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y });
+    } else if (B.kind === 'juggernaut') {               // charge
+      this.jugg.charge = 1.6;
+      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y });
+    } else if (B.kind === 'glutton') {                  // eats a marble from your hand
+      const eaten = this.hand.length >= 2 ? this.hand.pop() : null;
+      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y, eaten: eaten ? eaten.mat : null });
     }
   }
   orbUpdate(dt) {
@@ -1181,8 +1341,21 @@ class Run {
       this.emit('kiss', { x: kiss.to.x, y: kiss.to.y });
     }
     this.engrave(a, b, pts); this.engrave(b, a, pts);
+    if (!frozenHit && (a.eng.length || b.eng.length)) this.checkCombos(a, b, x, y);
     if (a.mat === 'glass' && imp > this.glassThresh()) this.pendingShatter.push(a);
     if (b.mat === 'glass' && imp > this.glassThresh()) this.pendingShatter.push(b);
+  }
+  checkCombos(a, b, x, y) {
+    for (const c of COMBOS) {
+      if ((a.eng.indexOf(c.a) < 0 && b.eng.indexOf(c.a) < 0) || (a.eng.indexOf(c.b) < 0 && b.eng.indexOf(c.b) < 0)) continue;
+      const last = this.comboCd[c.id];
+      if (last !== undefined && this.roomTick - last < 1 / T.STEP) continue;
+      this.comboCd[c.id] = this.roomTick;
+      this.stats.combos[c.id] = (this.stats.combos[c.id] || 0) + 1;
+      if (c.coins) this.coins += c.coins;
+      this.award(c.bonus, x, y, 'bonus', a, b, { label: c.name });
+      this.emit('combo', { id: c.id, name: c.name, x, y });
+    }
   }
   clutch(m) { m.clutchDone = true; this.stats.clutch++; this.award(30, m.x, m.y, 'bonus', m, null, { label: 'CLUTCH!' }); this.emit('clutch', { x: m.x, y: m.y }); }
   engrave(X, Y, pts) {
@@ -1207,10 +1380,20 @@ class Run {
   processPending() {
     if (this.pendingShatter.length) { for (const b of this.pendingShatter) this.shatter(b); this.pendingShatter.length = 0; }
     if (this.pendingSpawn.length) { for (const s of this.pendingSpawn) this.spawnClone(s); this.pendingSpawn.length = 0; }
+    if (this.pendingMulti.length) {   // two bonus clay marbles burst out of the orb
+      for (const mb of this.pendingMulti) for (const da of [2.1, -2.1]) {
+        if (this.marbles.length >= T.MAX_MARBLES) break;
+        const c = this.makeBody({ id: 0, mat: 'clay', eng: [], lvl: 1 }, mb.x, mb.y, Math.cos(mb.a + da) * 560, Math.sin(mb.a + da) * 560);
+        c.moved = true; this.marbles.push(c); this.emit('clone', { x: c.x, y: c.y });
+      }
+      this.pendingMulti.length = 0;
+    }
     let guard = 0;
     while (this.pendingBoom.length && guard++ < 24) this.explode(this.pendingBoom.shift());
     for (const b of this.marbles) {
       if (b.alive && b.moved && b.frozen <= 0 && b.vx === 0 && b.vy === 0 && b.eng.indexOf('seed') >= 0) this.sprout(b);
+      if (b.alive && b.moved && !b.bhDone && b.frozen <= 0 && b.vx === 0 && b.vy === 0 && b.eng.indexOf('blackhole') >= 0) { b.bhDone = true; b.bhT = 1.6; this.emit('singularity', { x: b.x, y: b.y }); }
+      if (b.bhT > 0) { b.bhT -= T.STEP; if (b.bhT <= 0) { b.bhT = 0; this.pendingBoom.push({ x: b.x, y: b.y, src: b, power: 1.8, label: 'SINGULARITY!' }); } }
     }
   }
   shatter(b) {
@@ -1251,7 +1434,7 @@ class Run {
     }
     const demo = this.has('demolition') ? 2 : 1;
     for (const k of this.blocks) {
-      if (k.dead) continue; const dx = k.x - bm.x, dy = k.y - bm.y; if (dx * dx + dy * dy > R2) continue;
+      if (k.dead || k.spin) continue; const dx = k.x - bm.x, dy = k.y - bm.y; if (dx * dx + dy * dy > R2) continue;
       k.hp -= 2 * demo; k.flash = 1; hits++; if (k.hp <= 0) this.breakBlock(k, src && src.alive ? src : null);
     }
     for (const bp of this.bumpers.slice()) {
@@ -1259,7 +1442,7 @@ class Run {
       bp.flash = 1; hits++; if (bp.warden) this.damageWarden(bp, 4);
     }
     this.stats.bombs++;
-    this.award(20 + 15 * hits, bm.x, bm.y, 'bonus', src && src.alive ? src : null, null, { label: bm.fuse ? 'FUSION!' : 'BOOM!' });
+    this.award(20 + 15 * hits, bm.x, bm.y, 'bonus', src && src.alive ? src : null, null, { label: bm.label || (bm.fuse ? 'FUSION!' : 'BOOM!') });
     this.emit('boom', { x: bm.x, y: bm.y, r: R, big: bm.power > 1.2 });
   }
   sprout(b) {
@@ -1279,6 +1462,9 @@ class Run {
       if (this.mut === 'sticky') mult *= 1.5;
       this.hitCount++;
       if (this.has('tenth') && this.hitCount % 10 === 0) { mult *= 5; this.emit('tenth', { x, y }); }
+      if (this.has('lucky7') && this.hitCount % 7 === 0) { mult *= 7; this.emit('tenth', { x, y }); }
+      if (this.path === 'wild') mult *= 1.25;
+      if (this.frenzy > 0) mult *= 2;
     }
     const pts = Math.max(0, Math.round(base * mult));
     if (pts <= 0) return 0;
@@ -1297,13 +1483,13 @@ class Run {
     const tm = a || b;
     if (tm && tm.throwId >= 0 && tm.throwId < this.throwScores.length) { const v = (this.throwScores[tm.throwId] += pts); if (v > this.stats.bestThrow) this.stats.bestThrow = v; }
     this.emit('pop', { x, y, pts, label: o.label || null, mult });
-    if (!this.cleared && this.roomScore >= this.target) { this.cleared = true; this.emit('cleared', {}); }
+    if (!this.cleared && this.roomScore >= this.target) { this.cleared = true; this.emit('cleared', { x, y }); }
     return pts;
   }
   bodyMult(m) {
     let k = 1;
     if (m.eng.indexOf('crown') >= 0) k *= 2;
-    if (m.charged > 0) k *= 2;
+    if (m.charged > 0) k *= m.chargeMult || 2;
     if (m.kiss) { k *= 3; m.kiss = false; }
     if (m.lastShot) k *= 3;
     return k;
@@ -1312,7 +1498,8 @@ class Run {
     if (m.eng.indexOf('gold') >= 0 && this.goldCoins < 15) { this.goldCoins++; this.coins += this.mut === 'goldfever' ? 2 : 1; this.emit('coin', { x: m.x, y: m.y }); }
   }
   endCheck() {
-    const busy = this.anyMoving() || this.echoes.length > 0 || this.pendingBoom.length > 0;
+    let bh = false; for (const b of this.marbles) if (b.alive && b.bhT > 0) { bh = true; break; }
+    const busy = bh || this.anyMoving() || this.echoes.length > 0 || this.pendingBoom.length > 0;
     if (busy) { this.stillTicks = 0; this.lastMove = this.roomTick; return; }
     this.stillTicks++;
     const hold = Math.round(T.STOP_HOLD / T.STEP);
@@ -1328,6 +1515,8 @@ class Run {
     if (this.mut === 'goldfever') coins += 3;
     if (this.has('piggy')) coins += Math.min(5, Math.floor(this.coins / 5));
     if (this.boss) { coins += 5; this.stats.bosses++; }
+    if (this.path === 'gold') coins *= 2;
+    if (this.path === 'wild') coins += 5;
     const leftBonus = Math.round(this.target * 0.1 * left);
     this.score += leftBonus; this.bd.leftover += leftBonus;
     this.coins += coins; this.stats.rooms++;
@@ -1335,10 +1524,11 @@ class Run {
     if (this.throws === 1) this.stats.oneMarble++;
     // Between rooms: the shop opens every third room; otherwise there's sometimes a free powerup.
     const shopRoom = isShopRoom(this.roomIdx);
-    const freePick = !shopRoom && (this.roomIdx === 1 || !!this.boss || this.rng.chance(0.4));
-    this.lastClear = { room: this.roomIdx, coins, overkill, left, leftBonus, score: this.roomScore, target: this.target, boss: !!this.boss, stop: shopRoom ? 'shop' : freePick ? 'reward' : 'next' };
+    const freePick = !shopRoom && this.path !== 'calm' && (this.roomIdx === 1 || !!this.boss || this.path === 'elite' || this.rng.chance(0.4));
+    this.lastClear = { room: this.roomIdx, coins, overkill, left, leftBonus, score: this.roomScore, target: this.target, boss: !!this.boss, path: this.path, stop: shopRoom ? 'shop' : freePick ? 'reward' : 'next' };
+    this.paths = this.genPaths();
     if (shopRoom) this.toShop();
-    else if (freePick) { this.phase = 'reward'; this.offer = this.genCards(); }
+    else if (freePick) { this.phase = 'reward'; this.offer = this.genCards(this.boss || this.path === 'elite' ? 1 : 0); }
     else this.phase = 'next';
     this.emit('roomEnd', this.lastClear);
   }
@@ -1350,22 +1540,28 @@ class Run {
 
   /* --------------------------- upgrades ---------------------------- */
   canEngrave(m, e) { return m.eng.length < T.ENG_SLOTS && m.eng.indexOf(e) < 0; }
-  genCards() {
+  genPaths() {
+    if ((this.roomIdx + 1) % T.BOSS_EVERY === 0) return ['boss'];
+    return this.rng.shuffle(['normal', 'gold', 'calm', 'elite', 'wild']).slice(0, 2);
+  }
+  rollRarity(boost) { const x = this.rng.next(), leg = 0.05 + 0.15 * boost, rare = 0.27 + 0.25 * boost; return x < leg ? 'l' : x < leg + rare ? 'r' : 'c'; }
+  genCards(boost) {
+    boost = boost || 0;
     const rng = this.rng, pool = this.cfg.pool, cards = [], used = {};
     const kinds = [['engrave', 32], ['newMarble', 22], ['polish', 16], ['reforge', 16], ['charm', 14]];
-    for (let guard = 0; cards.length < 3 && guard < 80; guard++) {
-      const kind = weighted(rng, kinds); let c = null;
-      if (kind === 'engrave') { const e = rng.pick(pool.engs); if (this.bag.some(m => this.canEngrave(m, e))) c = { kind, eng: e, key: 'e' + e }; }
-      else if (kind === 'reforge') { const m = rng.pick(pool.mats); if (this.bag.some(b => b.mat !== m)) c = { kind, mat: m, key: 'r' + m }; }
-      else if (kind === 'newMarble') {
-        const mat = rng.chance(0.5) ? rng.pick(pool.mats) : 'clay';
-        const eng = (mat === 'clay' || rng.chance(0.6)) ? [rng.pick(pool.engs)] : [];
-        c = { kind, mat, eng, key: 'n' + mat + eng.join() };
+    const ofR = (list, r) => { const f = list.filter(k => (RAR[k] || 'c') === r); return f.length ? f : null; };
+    for (let guard = 0; cards.length < 3 && guard < 120; guard++) {
+      const kind = weighted(rng, kinds), r = this.rollRarity(boost); let c = null;
+      if (kind === 'engrave') { const L2 = ofR(pool.engs, r); if (L2) { const e = rng.pick(L2); if (this.bag.some(m => this.canEngrave(m, e))) c = { kind, eng: e, rarity: r, key: 'e' + e }; } }
+      else if (kind === 'reforge') { const rr2 = r === 'l' ? 'r' : r, L2 = ofR(pool.mats, rr2); if (L2) { const m = rng.pick(L2); if (this.bag.some(b => b.mat !== m)) c = { kind, mat: m, rarity: rr2, key: 'r' + m }; } }
+      else if (kind === 'newMarble') { const L2 = ofR(pool.engs, r); if (L2) { const mat = rng.chance(0.5) ? rng.pick(pool.mats) : 'clay'; c = { kind, mat, eng: [rng.pick(L2)], rarity: r, key: 'n' + mat }; } }
+      else if (kind === 'polish') {
+        if (r === 'l') c = { kind: 'polishAll', rarity: 'l', key: 'pa' };
+        else if (this.bag.some(m => m.lvl < T.MAX_LVL)) c = { kind, rarity: r, amount: r === 'r' ? 2 : 1, key: 'p' + r };
       }
-      else if (kind === 'polish') { if (this.bag.some(m => m.lvl < T.MAX_LVL)) c = { kind, key: 'p' }; }
       else if (kind === 'charm') {
-        const avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
-        if (avail.length && this.charms.length < T.CHARM_SLOTS) { const ch = rng.pick(avail); c = { kind, charm: ch, key: 'c' + ch }; }
+        const avail = pool.charms.filter(x => this.charms.indexOf(x) < 0 && (RAR[x] || 'c') === r);
+        if (avail.length && this.charms.length < T.CHARM_SLOTS) { const ch = rng.pick(avail); c = { kind, charm: ch, rarity: r, key: 'c' + ch }; }
       }
       if (c && !used[c.key]) { used[c.key] = 1; cards.push(c); }
     }
@@ -1376,6 +1572,7 @@ class Run {
     const c = this.offer[i];
     if (c.kind === 'newMarble') { this.bag.push(this.newMarble(c.mat, c.eng.slice(), 1)); this.phase = 'next'; }
     else if (c.kind === 'charm') { this.charms.push(c.charm); this.phase = 'next'; }
+    else if (c.kind === 'polishAll') { for (const m of this.bag) if (m.lvl < T.MAX_LVL) m.lvl++; this.phase = 'next'; }
     else { this.pending = { from: 'reward', card: c }; this.phase = 'pick'; }
     return true;
   }
@@ -1392,7 +1589,7 @@ class Run {
     if (!m || !this.validTarget(c, m)) return false;
     if (c.kind === 'engrave') m.eng.push(c.eng);
     else if (c.kind === 'reforge') m.mat = c.mat;
-    else if (c.kind === 'polish') m.lvl++;
+    else if (c.kind === 'polish') m.lvl = Math.min(T.MAX_LVL, m.lvl + (c.amount || 1));
     else if (c.kind === 'remove') this.bag.splice(i, 1);
     const from = this.pending.from; this.pending = null;
     this.phase = from === 'reward' ? 'next' : 'shop';
@@ -1401,13 +1598,13 @@ class Run {
   toShop() { this.shop = { reroll: 2, items: [] }; this.genShopItems(); this.phase = 'shop'; }
   genShopItems() {
     const rng = this.rng, pool = this.cfg.pool, items = [];
+    const ofR = (list, r) => { const f = list.filter(k => (RAR[k] || 'c') === r); return f.length ? f : list; };
     for (let i = 0; i < 2; i++) {
-      const mat = rng.pick(['clay'].concat(pool.mats)), eng = [rng.pick(pool.engs)];
-      if (rng.chance(0.18)) { const e2 = rng.pick(pool.engs); if (e2 !== eng[0]) eng.push(e2); }
-      items.push({ kind: 'marble', mat, eng, cost: 5 + (mat !== 'clay' ? 2 : 0) + (eng.length - 1) * 4 + rng.int(0, 2) });
+      const r = this.rollRarity(0), mat = rng.pick(['clay'].concat(pool.mats)), eng = [rng.pick(ofR(pool.engs, r))];
+      items.push({ kind: 'marble', mat, eng, rarity: RAR[eng[0]] || 'c', cost: 5 + (mat !== 'clay' ? 2 : 0) + ({ c: 0, r: 3, l: 7 })[RAR[eng[0]] || 'c'] + rng.int(0, 2) });
     }
-    const avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
-    if (avail.length) items.push({ kind: 'charm', charm: rng.pick(avail), cost: 9 + rng.int(0, 3) });
+    const r = this.rollRarity(0), avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
+    if (avail.length) { const ch = rng.pick(ofR(avail, r)); items.push({ kind: 'charm', charm: ch, rarity: RAR[ch] || 'c', cost: ({ c: 9, r: 12, l: 16 })[RAR[ch] || 'c'] + rng.int(0, 2) }); }
     items.push({ kind: 'polish', cost: 4 }, { kind: 'remove', cost: 3 });
     this.shop.items = items;
   }
@@ -1604,6 +1801,8 @@ function paintIcon(g, eng, cx, cy, R) {
     case 'clone': g.lineWidth = 0.2; g.beginPath(); g.arc(-0.28, 0, 0.45, 0, TAU); g.stroke(); g.beginPath(); g.arc(0.28, 0, 0.45, 0, TAU); g.stroke(); break;
     case 'echo': g.lineWidth = 0.18; for (let i = 1; i <= 3; i++) { g.beginPath(); g.arc(-0.55, 0, i * 0.33, -0.9, 0.9); g.stroke(); } circle(g, -0.55, 0, 0.14); break;
     case 'pinball': poly([0, -0.9, 0.25, -0.25, 0.9, 0, 0.25, 0.25, 0, 0.9, -0.25, 0.25, -0.9, 0, -0.25, -0.25]); break;
+    case 'blackhole': g.lineWidth = 0.2; g.beginPath(); g.arc(0, 0, 0.75, 0.3, Math.PI * 1.6); g.stroke(); g.beginPath(); g.arc(0, 0, 0.42, Math.PI, Math.PI * 2.6); g.stroke(); circle(g, 0, 0, 0.18); break;
+    case 'split': circle(g, 0, 0.45, 0.24); circle(g, -0.55, -0.35, 0.24); circle(g, 0.55, -0.35, 0.24); g.lineWidth = 0.14; g.beginPath(); g.moveTo(0, 0.2); g.lineTo(-0.4, -0.2); g.moveTo(0, 0.2); g.lineTo(0.4, -0.2); g.stroke(); break;
     case 'fuse': g.lineWidth = 0.22; g.beginPath(); g.moveTo(-0.8, 0.3); g.bezierCurveTo(-0.4, -0.8, 0, 0.8, 0.4, -0.3); g.lineTo(0.8, -0.6); g.stroke(); circle(g, 0.8, -0.6, 0.16); break;
     case 'prism': g.lineWidth = 0.2; g.beginPath(); g.moveTo(0, -0.8); g.lineTo(0.8, 0.6); g.lineTo(-0.8, 0.6); g.closePath(); g.stroke(); g.beginPath(); g.moveTo(-0.9, 0); g.lineTo(0.1, 0.1); g.stroke(); break;
   }
@@ -1750,7 +1949,42 @@ function drawWorld(g, run, alpha, t, dtF) {
     g.fillStyle = '#ffd166'; circle(g, -gt.w / 2, 0, 4); circle(g, gt.w / 2, 0, 4);
     g.restore();
     const lx = -(gt.s || 0) * 13, ly = -(gt.c === undefined ? 1 : gt.c) * 13;   // label sits beside the gate, upright
-    g.font = font(900, 11); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd166'; g.fillText('×2', gt.x + (ly > 0 ? -lx : lx), gt.y - Math.abs(ly));
+    g.font = font(900, gt.mult === 3 ? 13 : 11); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = gt.mult === 3 ? '#ff8fd1' : '#ffd166'; g.fillText('×' + (gt.mult || 2), gt.x + (ly > 0 ? -lx : lx), gt.y - Math.abs(ly));
+  }
+  // vortexes
+  for (const v of run.vortexes) {
+    g.save(); g.translate(v.x, v.y);
+    const grd = g.createRadialGradient(0, 0, 4, 0, 0, v.r); grd.addColorStop(0, 'rgba(20,0,40,.85)'); grd.addColorStop(0.6, 'rgba(90,40,160,.35)'); grd.addColorStop(1, 'rgba(90,40,160,0)');
+    g.fillStyle = grd; circle(g, 0, 0, v.r);
+    g.rotate(t * 2.2); g.strokeStyle = 'rgba(199,125,255,.75)'; g.lineWidth = 2.5;
+    for (let i = 0; i < 3; i++) { g.rotate(TAU / 3); g.beginPath(); for (let k = 0; k <= 14; k++) { const a = k * 0.32, rr = 8 + k * 3.6; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.stroke(); }
+    g.restore();
+  }
+  // boost pads
+  for (const pd of run.pads) {
+    g.save(); g.translate(pd.x, pd.y); g.rotate(pd.a);
+    g.fillStyle = 'rgba(76,201,240,.18)'; rrect(g, -pd.w / 2, -pd.h / 2, pd.w, pd.h, 6); g.fill();
+    g.strokeStyle = 'rgba(76,201,240,.6)'; g.lineWidth = 1.5; rrect(g, -pd.w / 2, -pd.h / 2, pd.w, pd.h, 6); g.stroke();
+    for (let i = 0; i < 3; i++) {
+      const ph = ((t * 2.4 + i / 3) % 1), x = -pd.w / 2 + 8 + ph * (pd.w - 16);
+      g.strokeStyle = 'rgba(160,235,255,' + (0.35 + 0.65 * Math.sin(ph * Math.PI)).toFixed(2) + ')'; g.lineWidth = 3; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x - 5, -7); g.lineTo(x + 2, 0); g.lineTo(x - 5, 7); g.stroke();
+    }
+    g.lineCap = 'butt'; g.restore();
+  }
+  // collectible stars and multiball orbs
+  for (const st of run.stars) {
+    if (st.got) continue;
+    g.save(); g.translate(st.x, st.y); g.rotate(t * 1.2); const tw = 1 + 0.12 * Math.sin(t * 6 + st.x);
+    g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = (i % 2 ? 4.2 : 10) * tw; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.closePath();
+    g.fillStyle = '#ffe066'; g.fill(); g.strokeStyle = '#8a5a00'; g.lineWidth = 1.5; g.stroke(); g.restore();
+  }
+  for (const mb of run.multis) {
+    if (mb.got) continue;
+    const pulse = 1 + 0.08 * Math.sin(t * 7);
+    g.fillStyle = 'rgba(255,255,255,.15)'; circle(g, mb.x, mb.y, mb.r * 1.6 * pulse);
+    g.fillStyle = '#f4f4ff'; circle(g, mb.x, mb.y, mb.r * pulse); g.strokeStyle = '#4cc9f0'; g.lineWidth = 2.5; g.beginPath(); g.arc(mb.x, mb.y, mb.r * pulse, 0, TAU); g.stroke();
+    g.fillStyle = '#4cc9f0'; for (const [ox, oy] of [[0, -4.5], [-4.5, 3], [4.5, 3]]) circle(g, mb.x + ox, mb.y + oy, 3);
   }
   // holes
   for (const h of run.holes) {
@@ -1777,7 +2011,8 @@ function drawWorld(g, run, alpha, t, dtF) {
     g.fillStyle = theme.block2; rrect(g, x, y + 3, k.w, k.h, 5); g.fill();
     g.fillStyle = theme.block; rrect(g, x, y, k.w, k.h - 2, 5); g.fill();
     if (k.hp < k.maxHp) { g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + k.w * 0.3, y); g.lineTo(x + k.w * 0.42, y + k.h * 0.5); g.lineTo(x + k.w * 0.34, y + k.h - 2); if (k.hp < k.maxHp / 2) { g.moveTo(x + k.w * 0.7, y + k.h - 2); g.lineTo(x + k.w * 0.6, y + k.h * 0.4); } g.stroke(); }
-    const n = Math.max(0, Math.ceil(k.hp)), pw = Math.min(6, (k.w - 8) / Math.max(1, n));
+    if (k.spin) { g.fillStyle = '#7a0f22'; rrect(g, x, y + 3, k.w, k.h, 5); g.fill(); g.fillStyle = '#ff4d6d'; rrect(g, x, y, k.w, k.h - 2, 5); g.fill(); g.fillStyle = '#3a0410'; circle(g, 0, 0, 7); }
+    const n = k.spin ? 0 : Math.max(0, Math.min(8, Math.ceil(k.hp))), pw = Math.min(6, (k.w - 8) / Math.max(1, n));
     g.fillStyle = 'rgba(10,30,40,.75)';
     for (let i = 0; i < n; i++) circle(g, -(n - 1) * pw / 2 + i * pw, -1, 1.8);
     if (k.flash > 0) { g.globalAlpha = k.flash; g.fillStyle = '#fff'; rrect(g, x, y, k.w, k.h, 5); g.fill(); g.globalAlpha = 1; k.flash = Math.max(0, k.flash - dtF * 6); }
@@ -1795,7 +2030,20 @@ function drawWorld(g, run, alpha, t, dtF) {
       g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.arc(bp.x, bp.y, r + 8, 0, TAU); g.stroke();
       g.strokeStyle = '#fff'; g.beginPath(); g.arc(bp.x, bp.y, r + 8, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, bp.hp) / bp.maxHp); g.stroke();
     }
+    if (bp.lit || run.frenzy > 0) { g.strokeStyle = run.frenzy > 0 ? 'hsl(' + ((t * 300 + bp.x) % 360) + ',95%,65%)' : '#fff6c2'; g.lineWidth = 3; g.beginPath(); g.arc(bp.x, bp.y, r + 4, 0, TAU); g.stroke(); }
     if (f > 0) { g.strokeStyle = 'rgba(255,255,255,' + f.toFixed(2) + ')'; g.lineWidth = 3; g.beginPath(); g.arc(bp.x, bp.y, r + 3 + (1 - f) * 8, 0, TAU); g.stroke(); bp.flash = Math.max(0, f - dtF * 5); }
+  }
+  // boss attack warning: a pulsing red ring where the attack will come from
+  if (run.boss && run.boss.warn > 0) {
+    const p = run.bossPos(), k = 1 - run.boss.warn / 1.2, pulse = 0.5 + 0.5 * Math.sin(t * 22);
+    if (run.boss.kind === 'crusher') { g.strokeStyle = 'rgba(255,77,109,' + (0.4 + 0.5 * pulse).toFixed(2) + ')'; g.lineWidth = 6; const ins = (run.inset || 0) + 12; g.strokeRect(ins, ins, T.W - ins * 2, T.H - ins * 2); }
+    else { g.strokeStyle = 'rgba(255,77,109,' + (0.5 + 0.5 * pulse).toFixed(2) + ')'; g.lineWidth = 4; g.beginPath(); g.arc(p.x, p.y, 20 + k * (run.boss.kind === 'warden' ? 150 : 40), 0, TAU); g.stroke(); }
+  }
+  // closing walls
+  if (run.inset > 0) {
+    const ins = run.inset; g.fillStyle = 'rgba(40,4,14,.85)';
+    g.fillRect(0, 0, T.W, ins); g.fillRect(0, T.H - ins, T.W, ins); g.fillRect(0, ins, ins, T.H - ins * 2); g.fillRect(T.W - ins, ins, ins, T.H - ins * 2);
+    g.strokeStyle = '#ff4d6d'; g.lineWidth = 3; g.strokeRect(ins, ins, T.W - ins * 2, T.H - ins * 2);
   }
   // golden orb
   if (run.orb) {
@@ -1841,6 +2089,11 @@ function drawWorld(g, run, alpha, t, dtF) {
     if (b.frozen > 0) { g.fillStyle = 'rgba(190,235,255,.45)'; circle(g, x, y, b.r + 1); g.strokeStyle = '#dff6ff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, b.r + 2, 0, TAU); g.stroke(); }
     if (b.charged > 0) { g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.setLineDash([4, 4]); g.lineDashOffset = -t * 30; g.beginPath(); g.arc(x, y, b.r + 4, 0, TAU); g.stroke(); g.setLineDash([]); }
     if (b.kiss) { g.strokeStyle = '#ff8fd1'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, b.r + 5, 0, TAU); g.stroke(); }
+    if (b.bhT > 0) {   // black hole: a swirling dark disc
+      const r2 = 30 + 18 * Math.sin(t * 10);
+      g.fillStyle = 'rgba(20,0,40,.55)'; circle(g, x, y, r2); g.strokeStyle = '#c77dff'; g.lineWidth = 3;
+      g.beginPath(); g.arc(x, y, r2, t * 6, t * 6 + 4.5); g.stroke();
+    }
     if (b.lastShot) { g.strokeStyle = 'rgba(255,182,39,.8)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, b.r + 3, 0, TAU); g.stroke(); }
     if (b.eng.indexOf('bomb') >= 0 && !b.bombed && b.bombHits >= 5 && Math.sin(t * 18) > 0) { g.strokeStyle = '#ff4d6d'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, b.r + 4, 0, TAU); g.stroke(); }
   }
@@ -1899,7 +2152,7 @@ function drawHUD(g, run, t) {
   const x0 = L.colX + 14, x1 = L.colX + L.colW - 14, cx = (x0 + x1) / 2;
   const rx0 = left ? x0 + 62 : x0, rx1 = left ? x1 : x1 - 62; // keep clear of the pause button
   let roomLabel = 'ROOM ' + run.roomIdx;
-  if (run.boss) roomLabel += ' • BOSS'; else if (run.mut) roomLabel += ' • ' + MUTATORS[run.mut].name.split(' ')[0];
+  if (run.boss) roomLabel += ' • BOSS'; else if (run.path && run.path !== 'normal') roomLabel += ' • ' + PATHS[run.path].name.split(' ')[0].toUpperCase(); else if (run.mut) roomLabel += ' • ' + MUTATORS[run.mut].name.split(' ')[0];
   txt(g, roomLabel, rx0, top + 18, 17, run.boss ? '#ff8fa0' : '#cfe0d6', 'left', 900);
   const roomW = g.measureText(roomLabel).width;
   txt(g, '● ' + run.coins, rx1, top + 18, 18, '#ffd166', 'right', 900);
@@ -1907,7 +2160,8 @@ function drawHUD(g, run, t) {
   if (App.ghost && App.state === 'play') {   // race your best run: show the ghost's progress where it fits
     const gr = App.ghost.run, k = v => v >= 10000 ? Math.round(v / 1000) + 'k' : fmt(v);
     const lo = rx0 + roomW + 12, hi = rx1 - coinW - 12;
-    for (const s of ['GHOST R' + gr.roomIdx + ' ' + fmt(gr.score), 'GHOST ' + k(gr.score), '◌ ' + k(gr.score)]) {
+    const tag = App.rival ? App.rival.n : 'GHOST';
+    for (const s of [tag + ' R' + gr.roomIdx + ' ' + fmt(gr.score), tag + ' ' + k(gr.score), '◌ ' + k(gr.score)]) {
       g.font = font(800, 16); const w = g.measureText(s).width;
       if (w <= hi - lo) { g.globalAlpha = 0.8; txt(g, s, (lo + hi) / 2, top + 18, 16, '#e7f3ee', 'center', 800); g.globalAlpha = 1; break; }
     }
@@ -1924,15 +2178,18 @@ function drawHUD(g, run, t) {
   // target progress bar
   const by = top + 64, bh = 24, bw = x1 - x0, prog = clamp(run.roomScore / run.target, 0, 1);
   g.fillStyle = 'rgba(0,0,0,.4)'; rrect(g, x0, by, bw, bh, 12); g.fill();
-  if (prog > 0) { g.fillStyle = run.cleared ? '#8be28b' : '#ffb627'; rrect(g, x0, by, Math.max(bh, bw * prog), bh, 12); g.fill(); }
+  if (run.boss && !run.cleared) {   // boss: the bar is its health, shrinking as you score
+    const hp = 1 - prog; g.fillStyle = '#ff4d6d'; if (hp > 0) { rrect(g, x0 + bw * (1 - hp), by, Math.max(bh, bw * hp), bh, 12); g.fill(); }
+  } else if (prog > 0) { g.fillStyle = run.cleared ? '#8be28b' : '#ffb627'; rrect(g, x0, by, Math.max(bh, bw * prog), bh, 12); g.fill(); }
   if (App.ghost && App.ghostVisible) {
     const gr = App.ghost.run;
     if (gr.roomIdx === run.roomIdx) { const gx = x0 + bw * clamp(gr.roomScore / gr.target, 0, 1); g.fillStyle = '#fff'; g.fillRect(gx - 1.5, by - 3, 3, bh + 6); }
   }
-  txt(g, (run.cleared ? '✓ ' : '') + fmt(run.roomScore) + ' / ' + fmt(run.target), x0 + bw / 2, by + bh / 2 + 1, 16, '#fff', 'center', 900, 4);
+  const barText = run.boss ? (run.cleared ? '✓ ' + BOSSES[run.boss.kind].name + ' DEFEATED' : BOSSES[run.boss.kind].name + '  HP ' + fmt(Math.max(0, run.target - run.roomScore))) : (run.cleared ? '✓ ' : '') + fmt(run.roomScore) + ' / ' + fmt(run.target);
+  txt(g, barText, x0 + bw / 2, by + bh / 2 + 1, 16, '#fff', 'center', 900, 4);
   // chaos meter
   const cy = top + 102, lvl = run.chaosLvl, col = CHAOS_COL[lvl];
-  const lab = '×' + T.CHAOS_LEVELS[lvl].mult + (T.CHAOS_LEVELS[lvl].name ? ' ' + T.CHAOS_LEVELS[lvl].name : '');
+  const lab = run.frenzy > 0 ? 'FRENZY ×2' : '×' + run.chaosMult + (T.CHAOS_LEVELS[lvl].name ? ' ' + T.CHAOS_LEVELS[lvl].name : '');
   txt(g, lab, x0, cy, 18, col, 'left', 900, 4);
   const mx0 = x0 + 104, mw = x1 - mx0;
   g.fillStyle = 'rgba(0,0,0,.4)'; rrect(g, mx0, cy - 7, mw, 14, 7); g.fill();
@@ -2060,6 +2317,16 @@ function drawChaosFrame(g, run, t) {
 // Blackout: a dark layer with light cut out around marbles. Moving marbles leave a
 // fading trail of light, the room is lit briefly at the start, and the dark isn't total.
 const LightTrail = { pts: [], i: 0, n: 0, init() { for (let k = 0; k < 260; k++) this.pts.push({ x: 0, y: 0, life: 0 }); } };
+// Hit-combo counter in the board's top corner: grows and pulses as the chain builds.
+function drawComboCounter(g, run, dtF) {
+  if (run.phase !== 'play') { App.lastChain = 0; return; }
+  if (run.chain !== App.lastChain) { if (run.chain > App.lastChain) App.chainPulse = 1; App.lastChain = run.chain; }
+  App.chainPulse = Math.max(0, (App.chainPulse || 0) - dtF * 5);
+  if (run.chain < 5) return;
+  const size = Math.round(18 + Math.min(16, run.chain / 4) + App.chainPulse * 6), left = SAVE.settings.hand === 'left';
+  const x = left ? L.ax + L.aw - 12 : L.ax + 12, y = L.ay + 22;
+  txt(g, run.chain + ' HITS', x, y, size, CHAOS_COL[Math.max(1, run.chaosLvl)], left ? 'right' : 'left', 900, 5);
+}
 function drawFog(g, run, alpha) {
   if (!LightTrail.pts.length) LightTrail.init();
   const f = fogC.getContext('2d'), d = L.dpr, s = L.s;
@@ -2083,6 +2350,9 @@ function drawFog(g, run, alpha) {
   if (run.orb) hole(run.orb.x, run.orb.y, 44);
   for (const h of run.holes) hole(h.x, h.y, 38);
   for (const sp of run.spikes) hole(sp.x, sp.y, 34);
+  for (const v of run.vortexes) hole(v.x, v.y, 50);
+  for (const st of run.stars) if (!st.got) hole(st.x, st.y, 18);
+  for (const pd of run.pads) hole(pd.x, pd.y, 30);
   for (const bp of run.bumpers) hole(bp.x, bp.y, bp.r + 10);   // bumpers glow faintly so you can aim at them
   f.globalCompositeOperation = 'source-over';
   g.drawImage(fogC, 0, 0, T.W, T.H);
@@ -2099,6 +2369,11 @@ function render(alpha, t, dtF) {
   g.drawImage(boardC, L.ax - boardPad + sx, L.ay - boardPad + sy, L.aw + boardPad * 2, L.ah + boardPad * 2);
   g.save(); g.translate(L.ax + sx, L.ay + sy); g.scale(L.s, L.s);
   g.save(); rrect(g, -2, -2, T.W + 4, T.H + 4, 18); g.clip();
+  if (App.zoom && App.state === 'play') {   // brief zoom toward the hit that cleared the room
+    App.zoom.t += dtF; const k = App.zoom.t / 0.9;
+    if (k >= 1) App.zoom = null;
+    else { const z = 1 + 0.14 * Math.sin(Math.PI * k); g.translate(App.zoom.x, App.zoom.y); g.scale(z, z); g.translate(-App.zoom.x, -App.zoom.y); }
+  }
   drawWorld(g, run, alpha, t, dtF);
   if (App.state === 'play') drawAim(g, run, t);
   if (run.mut === 'blackout') drawFog(g, run, alpha);
@@ -2108,6 +2383,7 @@ function render(alpha, t, dtF) {
     drawHUD(g, run, t);
     drawTray(g, run, t);
     drawTutorial(g, run, t);
+    drawComboCounter(g, run, dtF);
     if (Input.aiming && Input.pid !== null) {
       const cancel = Input.cancelling(), R = T.CANCEL_R;
       if (!cancel) { g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 3; g.setLineDash([3, 6]); g.beginPath(); g.moveTo(Input.sx, Input.sy); g.lineTo(Input.x, Input.y); g.stroke(); g.setLineDash([]); }
@@ -2131,6 +2407,12 @@ function handleEvents(run, quiet) {
     const e = ev[i];
     switch (e.type) {
       case 'pop':
+        if (!quiet && App.state === 'play' && !App.pbShown && App.bestForMode > 0 && run === App.run && run.score > App.bestForMode) {   // personal best: confetti
+          App.pbShown = true; FX.banner('NEW BEST!', 'You just beat ' + fmt(App.bestForMode), '#ffd166', 1.8, 3);
+          const cols = ['#ffd166', '#ff5d73', '#4cc9f0', '#8be28b', '#c77dff'];
+          for (let i = 0; i < 5; i++) FX.burst(T.W * (i + 0.5) / 5, 24, 18, 260, cols[i], 2, 3, 1.8, 420);
+          if (snd) Sound.golden(); if (hap) hap.play(HAPTIC.clear);
+        }
         if (e.label) FX.pop(e.x, e.y, e.label + (e.label.indexOf('+') < 0 ? ' +' + fmt(e.pts) : ''), '#ffffff', 21, 1.1);
         else if (e.pts >= 12) FX.pop(e.x, e.y, '+' + fmt(e.pts), CHAOS_COL[run.chaosLvl], e.pts >= 300 ? 23 : e.pts >= 80 ? 19 : 16, 0.75);
         break;
@@ -2169,6 +2451,12 @@ function handleEvents(run, quiet) {
       case 'clone': FX.ring(e.x, e.y, 4, 26, 0.3, '#fff', 2); if (snd) Sound.clone(); break;
       case 'shatter': FX.burst(e.x, e.y, 16, 240, '#b4f3ff', 1, 2, 0.4); if (snd) Sound.shatter(); if (hap) hap.play(HAPTIC.hit); break;
       case 'sprout': FX.burst(e.x, e.y, 12, 140, '#7ae582', 0, 2.2, 0.5); FX.ring(e.x, e.y, 4, 26, 0.35, '#7ae582', 3); if (snd) Sound.sprout(); break;
+      case 'pad': FX.burst(e.x, e.y, 8, 260, '#a0ebff', 1, 2, 0.35); if (snd) Sound.launch(1); if (hap) hap.play([8]); break;
+      case 'vortexOut': FX.ring(e.x, e.y, 4, 26, 0.3, '#c77dff', 3); if (snd) Sound.spark(); break;
+      case 'multi': FX.ring(e.x, e.y, 6, 60, 0.5, '#4cc9f0', 5); if (!quiet) FX.banner('MULTIBALL!', '', '#4cc9f0', 1, 2); if (snd) Sound.golden(); if (hap) hap.play(HAPTIC.pickup); break;
+      case 'star': FX.burst(e.x, e.y, 10, 160, '#ffe066', 0, 2, 0.45); if (snd) Sound.coin(); if (hap) hap.play([6]); break;
+      case 'allstars': if (!quiet) FX.banner('ALL STARS!', '+300', '#ffe066', 1.4, 2); FX.burst(e.x, e.y, 30, 300, '#ffe066', 2, 3, 0.9, 200); if (snd) Sound.clear(); break;
+      case 'frenzy': if (!quiet) FX.banner('FRENZY!', 'Every bumper lit: all points ×2 for 6s', '#ff8fd1', 1.6, 3); FX.addFlash(0.25, '#ff8fd1'); if (snd) Sound.chaosUp(4); if (hap) hap.play(HAPTIC.clear); break;
       case 'gate': if (snd) Sound.gate(); FX.burst(e.x, e.y, 6, 80, '#ffd166', 0, 1.8, 0.3); break;
       case 'echo': FX.ring(e.x, e.y, 4, 30, 0.4, '#c9a7ff', 3); break;
       case 'orbSpawn': FX.ring(e.x, e.y, 40, 10, 0.5, '#ffd166', 4); if (!quiet) FX.banner('GOLDEN ORB!', 'Hit it before it fades', '#ffd166', 1.1, 1); if (snd) Sound.orb(); break;
@@ -2180,7 +2468,11 @@ function handleEvents(run, quiet) {
         if (!quiet && e.lvl >= 2) FX.banner(T.CHAOS_LEVELS[e.lvl].name, '×' + T.CHAOS_LEVELS[e.lvl].mult + ' points', CHAOS_COL[e.lvl], 0.9, 1);
         if (snd) Sound.chaosUp(e.lvl); if (hap) hap.play([8]); break;
       case 'cleared':
-        if (!quiet) { FX.banner('CLEARED!', run.hand.length ? 'Keep throwing for coins, or cash out' : '', '#8be28b', 1.6, 3); FX.burst(T.W / 2, T.H * 0.38, 40, 340, '#8be28b', 2, 3, 1, 260); }
+        if (!quiet) {
+          FX.banner(run.boss ? 'BOSS DEFEATED!' : 'CLEARED!', run.hand.length ? 'Keep throwing for coins, or cash out' : '', '#8be28b', 1.6, 3); FX.burst(T.W / 2, T.H * 0.38, 40, 340, '#8be28b', 2, 3, 1, 260);
+          if (!SAVE.settings.reducedMotion && e.x !== undefined) App.zoom = { t: 0, x: e.x, y: e.y };
+          App.slowmo(0.7);
+        }
         if (snd) Sound.clear(); if (hap) hap.play(HAPTIC.clear); break;
       case 'room':
         if (!quiet) {
@@ -2189,6 +2481,18 @@ function handleEvents(run, quiet) {
           else FX.banner('ROOM ' + e.n, 'Target ' + fmt(e.target) + ' · ' + run.handSize + ' marbles drawn from your bag', '#fff7e6', 1.6, 2);
         }
         Sound.resetNotes(); for (const p of LightTrail.pts) p.life = 0; break;
+      case 'combo':
+        if (!quiet && !SAVE.combos[e.id]) { SAVE.combos[e.id] = todayStr(); FX.banner('NEW COMBO!', e.name + ' discovered', '#c77dff', 1.8, 3); }
+        FX.ring(e.x, e.y, 6, 50, 0.45, '#c77dff', 4); if (snd) Sound.kiss(); if (hap) hap.play(HAPTIC.pickup); break;
+      case 'singularity': FX.ring(e.x, e.y, 90, 8, 0.6, '#c77dff', 4); if (snd) Sound.frost(); break;
+      case 'bossWarn': if (!quiet) { FX.pop(e.x, e.y - 30, e.kind === 'glutton' ? 'HUNGRY…' : e.kind === 'crusher' ? 'RUMBLE…' : '!', '#ff5d73', 24, 1.1); } if (snd) Sound.deny(); if (hap) hap.play([20, 60, 20]); break;
+      case 'bossAttack':
+        FX.addShake(e.kind === 'crusher' ? 10 : 7);
+        if (e.kind === 'warden') FX.ring(e.x, e.y, 20, e.r, 0.5, '#ff5d73', 6);
+        if (e.kind === 'crusher') FX.addFlash(0.25, '#ff5d73');
+        if (e.kind === 'juggernaut' && !quiet) FX.pop(e.x, e.y - 26, 'CHARGE!', '#ff5d73', 24, 1);
+        if (e.kind === 'glutton' && !quiet) FX.pop(e.x, e.y - 26, e.eaten ? 'GULP! −1 marble' : 'MISSED!', '#ff5d73', 22, 1.3);
+        if (snd) Sound.boom(false); if (hap) hap.play(HAPTIC.boom); break;
       case 'roomEnd': App.ff = false; if (!quiet) App.onRoomEnd(); break;
       case 'over': if (!quiet) App.onRunOver(); break;
     }
@@ -2229,7 +2533,7 @@ const UI = {
     if (!ff && App.ff) App.ff = false;              // the board settled (or the room ended): back to normal speed
     this.setVis(this.bankBtn, bank); this.setVis(this.ffBtn, ff); this.bankHidden = !(bank || ff);
     if (ff) {
-      const label = App.ff ? '▶ NORMAL SPEED' : '⏩ FAST FORWARD 10×';
+      const label = App.ff ? '▶ NORMAL SPEED' : '⏩ FAST FORWARD 3×';
       if (label !== this.ffLabel) { this.ffBtn.textContent = label; this.ffBtn.classList.toggle('on', App.ff); this.ffLabel = label; }
     }
     if (bank) {
@@ -2338,11 +2642,18 @@ function showRecords(tab) {
     const dailyBest = SAVE.daily.date === todayStr() ? SAVE.daily.best : 0;
     body = '<div class="list">' + row('Best score', fmt(s.bestScore)) + row('Today’s daily best', fmt(dailyBest)) + row('Furthest room', s.bestRoom) + row('Best combo chain', s.bestChain) +
       row('Best Chaos', '×' + s.bestChaos) + row('Longest run', Math.round(s.longestRun) + 's') + row('Total runs', s.runs) + row('Rooms cleared', s.totalRooms) + row('Shards earned', s.shardsEarned) + '</div>';
+  } else if (tab === 'combos') {
+    const found = COMBOS.filter(c => SAVE.combos[c.id]).length;
+    body = '<p class="center muted">' + found + ' of ' + COMBOS.length + ' combos discovered. Combos trigger when two engravings meet in one collision.</p><div class="list">' +
+      COMBOS.map(c => { const got = !!SAVE.combos[c.id]; return '<div class="li ' + (got ? '' : 'done') + '"><div class="grow"><div class="nm">' + (got ? esc(c.name) : '???') + '</div><div class="ds">' + (got ? ENGS[c.a].name + ' + ' + ENGS[c.b].name : ENGS[c.a].name + ' + ???') + '</div></div><div class="nm">+' + c.bonus + '</div></div>'; }).join('') + '</div>';
+  } else if (tab === 'friends') {
+    body = SAVE.friends.length ? '<div class="list">' + SAVE.friends.map((fr, i) => '<div class="li"><div class="grow"><div class="nm">' + esc(fr.n) + ' — ' + fmt(fr.s) + (fr.verified ? ' ✓' : '') + '</div><div class="ds">' + esc(fr.label) + (fr.mine ? ' · You: ' + fmt(fr.mine) + (fr.mine > fr.s ? ' (you win)' : '') : '') + '</div></div><button class="btn small" data-act="raceFriend" data-arg="' + i + '">Race</button></div>').join('') + '</div>'
+      : '<p class="muted center">No challenges yet. Finish a run and tap Challenge to send a friend your exact run. Their phone replays it as a ghost.</p>';
   } else {
     body = '<div class="list">' + ACHIEVEMENTS.map(a => { const got = !!SAVE.achievements[a.id]; const hidden = a.secret && !got; return '<div class="li ' + (got ? '' : 'done') + '"><div class="nm" style="width:28px">' + (got ? '★' : '☆') + '</div><div class="grow"><div class="nm">' + (hidden ? '???' : esc(a.name)) + '</div><div class="ds">' + (hidden ? 'A secret technique.' : esc(a.desc)) + '</div></div><div class="nm">' + sh(a.reward) + '</div></div>'; }).join('') + '</div>';
   }
   const tb = (id, n) => '<button class="btn ' + (tab === id ? 'on' : '') + '" data-act="rtab" data-arg="' + id + '">' + n + '</button>';
-  UI.show('records', '<div class="col"><h2>Records</h2><div class="tabs">' + tb('top', 'Top 10') + tb('stats', 'Stats') + tb('ach', 'Awards') + '</div>' + body + '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Back</button></div></div>');
+  UI.show('records', '<div class="col"><h2>Records</h2><div class="tabs">' + tb('top', 'Top 10') + tb('stats', 'Stats') + tb('ach', 'Awards') + tb('combos', 'Combos') + tb('friends', 'Friends') + '</div>' + body + '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Back</button></div></div>');
 }
 
 function showWorkshop() {
@@ -2379,7 +2690,9 @@ function cardInfo(c) {
     case 'engrave': return { tag: 'ENGRAVE', name: ENGS[c.eng].name, desc: ENGS[c.eng].desc + ' Choose a marble.', prev: prevCanvas('clay', [c.eng]) };
     case 'reforge': return { tag: 'REFORGE', name: MATS[c.mat].name, desc: MATS[c.mat].desc + ' Choose a marble to convert.', prev: prevCanvas(c.mat, []) };
     case 'newMarble': return { tag: 'NEW MARBLE', name: marbleName(c), desc: (c.eng.length ? ENGS[c.eng[0]].desc : MATS[c.mat].desc) + ' Joins your bag.', prev: prevCanvas(c.mat, c.eng) };
-    case 'polish': return { tag: 'POLISH', name: 'Level Up', desc: 'One marble gains a level: +50% points per level.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:24px">LV+</div>' };
+    case 'polishAll': return { tag: 'POLISH', name: 'Golden Polish', desc: 'Every marble in your bag gains a level.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:24px">LV↑</div>' };
+    case 'polish': if (c.amount === 2) return { tag: 'POLISH', name: 'Master Polish', desc: 'One marble gains 2 levels.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:22px">LV++</div>' };
+      return { tag: 'POLISH', name: 'Level Up', desc: 'One marble gains a level: +50% points per level.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:24px">LV+</div>' };
     case 'charm': return { tag: 'CHARM', name: CHARMS[c.charm].name, desc: CHARMS[c.charm].desc, prev: '<div class="badge">' + CHARMS[c.charm].glyph + '</div>', charm: true };
   }
   return { tag: '', name: '', desc: '', prev: '' };
@@ -2390,7 +2703,7 @@ function goalsHTML() {
 }
 function showReward() {
   const run = App.run, lc = run.lastClear; UI.back = null;
-  const cards = run.offer.map((c, i) => { const ci = cardInfo(c); return '<button class="card ' + (ci.charm ? 'charm' : '') + '" data-act="card" data-arg="' + i + '">' + ci.prev + '<div class="ctext"><div class="ctag">' + ci.tag + '</div><div class="cname">' + esc(ci.name) + '</div><div class="cdesc">' + esc(ci.desc) + '</div></div></button>'; }).join('');
+  const cards = run.offer.map((c, i) => { const ci = cardInfo(c), r = c.rarity || 'c'; return '<button class="card ' + (ci.charm ? 'charm ' : '') + r + '" data-act="card" data-arg="' + i + '">' + ci.prev + '<div class="ctext"><div class="ctag">' + (r !== 'c' ? RARITY[r].name + ' ' : '') + ci.tag + '</div><div class="cname">' + esc(ci.name) + '</div><div class="cdesc">' + esc(ci.desc) + '</div></div></button>'; }).join('');
   UI.show('reward', '<div class="col"><h2>' + (lc.boss ? 'BOSS DOWN!' : 'ROOM ' + lc.room + ' CLEARED') + '</h2>' +
     '<p class="center muted" style="font-weight:800">' + clearedLine(lc) + '</p>' +
     '<div class="spacer"></div><h3 class="center" style="color:var(--good)">Free powerup! Pick one</h3>' + cards +
@@ -2409,7 +2722,7 @@ function showPick(viewOnly, backFn) {
   const tiles = run.bag.map((m, i) => {
     const valid = viewOnly || run.validTarget(p.card, m);
     return '<button class="tile ' + (viewOnly ? 'view' : '') + '" ' + (valid ? '' : 'disabled') + (viewOnly ? '' : ' data-act="target" data-arg="' + i + '"') + '>' + prevCanvas(m.mat, m.eng) +
-      '<div>' + MATS[m.mat].name + '</div><div class="lv">LV ' + m.lvl + '</div><div class="muted" style="font-size:14px;line-height:1.1">' + (m.eng.map(e => ENGS[e].name).join(' + ') || '—') + '</div></button>';
+      '<div>' + MATS[m.mat].name + '</div><div class="lv">LV ' + m.lvl + (viewOnly && run.phase === 'play' && run.hand.indexOf(m) >= 0 ? ' · IN HAND' : '') + '</div><div class="muted" style="font-size:14px;line-height:1.1">' + (m.eng.map(e => ENGS[e].name).join(' + ') || '—') + '</div></button>';
   }).join('');
   const charms = run.charms.length ? '<h3>Charms</h3><div class="list">' + run.charms.map(c => '<div class="li"><div class="badge sm">' + CHARMS[c].glyph + '</div><div class="grow"><div class="nm">' + CHARMS[c].name + '</div><div class="ds">' + CHARMS[c].desc + '</div></div></div>').join('') + '</div>' : '';
   let foot;
@@ -2417,11 +2730,11 @@ function showPick(viewOnly, backFn) {
   else if (p.from === 'shop') foot = '<button class="btn" data-act="cancelPick">Cancel (refund)</button>';
   else foot = '';
   UI.show('pick', '<div class="col"><h2>' + (viewOnly ? 'Your bag (' + run.bag.length + ')' : esc(pickTitle(p.card))) + '</h2>' +
-    (viewOnly ? '' : '<p class="center muted">' + esc(cardInfo(p.card).desc || '') + '</p>') +
+    (viewOnly ? (run.phase === 'play' ? '<p class="center muted">Game paused. Each room deals ' + run.handSize + ' of these at random; ' + run.hand.length + ' still in your hand.</p>' : '') : '<p class="center muted">' + esc(cardInfo(p.card).desc || '') + '</p>') +
     '<div class="grid">' + tiles + '</div>' + (viewOnly ? charms : '') + '<div class="spacer"></div>' + (foot ? '<div class="foot">' + foot + '</div>' : '') + '</div>');
 }
 function shopItemInfo(it) {
-  if (it.kind === 'marble') return { name: marbleName(it), desc: ENGS[it.eng[0]].desc + (it.eng[1] ? ' Also: ' + ENGS[it.eng[1]].name + '.' : ''), prev: prevCanvas(it.mat, it.eng, true) };
+  if (it.kind === 'marble') return { name: (it.rarity && it.rarity !== 'c' ? RARITY[it.rarity].name.charAt(0) + RARITY[it.rarity].name.slice(1).toLowerCase() + ' · ' : '') + marbleName(it), desc: ENGS[it.eng[0]].desc + (it.eng[1] ? ' Also: ' + ENGS[it.eng[1]].name + '.' : ''), prev: prevCanvas(it.mat, it.eng, true) };
   if (it.kind === 'charm') return { name: CHARMS[it.charm].name + ' (charm)', desc: CHARMS[it.charm].desc + ' ' + App.run.charms.length + '/' + T.CHARM_SLOTS + ' slots used.', prev: '<div class="badge sm">' + CHARMS[it.charm].glyph + '</div>' };
   if (it.kind === 'polish') return { name: 'Level Up', desc: '+1 level to a marble you choose.', prev: '<div class="badge sm" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:16px">LV+</div>' };
   return { name: 'Remove Marble', desc: 'Thin your bag so your best marbles come up more.', prev: '<div class="badge sm" style="background:#3a1010;border-color:#ff6b7f;color:#ff6b7f">✕</div>' };
@@ -2444,25 +2757,34 @@ function showShop() {
   const run = App.run, sp = run.shop, lc = run.lastClear; UI.back = null;
   const items = sp.items.map((it, i) => {
     const info = shopItemInfo(it), can = run.canBuy(it);
-    return '<div class="shopitem ' + (it.sold ? 'sold' : '') + '">' + info.prev + '<div class="grow"><div class="snm">' + esc(info.name) + '</div><div class="sds">' + esc(info.desc) + '</div></div>' +
+    return '<div class="shopitem ' + (it.sold ? 'sold ' : '') + (it.rarity || 'c') + '">' + info.prev + '<div class="grow"><div class="snm">' + esc(info.name) + '</div><div class="sds">' + esc(info.desc) + '</div></div>' +
       '<button class="btn small" data-act="buy" data-arg="' + i + '" ' + (can ? '' : 'disabled') + '>' + (it.sold ? 'Sold' : co(it.cost)) + '</button></div>';
   }).join('');
   UI.show('shop', '<div class="col tight"><div class="row" style="align-items:center"><h2 style="text-align:left">Shop</h2><div class="chip" style="flex:0 0 auto">' + co(run.coins) + '</div></div>' +
     (lc ? '<p class="muted" style="font-weight:800;font-size:16px">Room ' + lc.room + ' cleared: ' + clearedLine(lc) + '</p>' : '') +
-    '<p style="font-weight:900;font-size:16px">Next: ' + nextRoomText(run) + '</p>' +
+    '<p style="font-weight:900;font-size:16px">Next: Room ' + (run.roomIdx + 1) + ((run.roomIdx + 1) % T.BOSS_EVERY === 0 ? ' · BOSS' : ' · you pick the room type') + '</p>' +
     items +
     '<div class="spacer"></div><div class="row"><button class="btn small" data-act="reroll" ' + (run.coins >= sp.reroll ? '' : 'disabled') + '>Reroll ' + co(sp.reroll) + '</button><button class="btn small" data-act="viewBag">Bag ' + run.bag.length + '</button>' +
-    '<button class="btn primary" style="flex:2 1 0;min-height:56px;font-size:21px" data-act="leave">NEXT \u25B6</button></div></div>');
+    '<button class="btn primary" style="flex:2 1 0;min-height:56px;font-size:21px" data-act="toPaths">NEXT \u25B6</button></div></div>');
 }
-// Shown after a room when there's no shop (and after taking or skipping a free powerup).
-function showNext() {
-  const run = App.run, lc = run.lastClear; UI.back = null;
-  UI.show('next', '<div class="col"><h2>' + (lc.boss ? 'BOSS DOWN!' : 'ROOM ' + lc.room + ' CLEARED') + '</h2>' +
-    '<p class="center muted" style="font-weight:800">' + clearedLine(lc) + '</p>' +
-    '<div class="spacer"></div>' +
-    '<div class="panel center"><p style="font-weight:900;font-size:20px">Next: ' + nextRoomText(run) + '</p><p class="muted">' + shopHint(run) + ' You have ' + co(run.coins) + '</p></div>' +
-    '<div class="row"><button class="btn small" data-act="viewBagNext">Bag (' + run.bag.length + ')</button></div>' +
-    '<div class="foot"><button class="btn primary" data-act="leave">NEXT ROOM \u25B6</button></div></div>');
+// After a room: choose the next room (pick-your-path). Also reached from the shop's NEXT button.
+function pathCardsHTML(run) {
+  const next = run.roomIdx + 1;
+  return (run.paths || ['normal']).map((p, i) => {
+    const P = PATHS[p], boss = p === 'boss';
+    const desc = boss ? BOSSES[BOSS_ORDER[(next / T.BOSS_EVERY - 1) % BOSS_ORDER.length]].name + ': ' + BOSSES[BOSS_ORDER[(next / T.BOSS_EVERY - 1) % BOSS_ORDER.length]].desc : P.desc;
+    return '<button class="card path ' + (boss ? 'l' : p === 'elite' ? 'r' : '') + '" data-act="leave" data-arg="' + i + '"><div class="badge" style="' + (boss ? 'background:#4a0a18;border-color:#ff5d73;color:#ff8fa0' : '') + '">' + P.icon + '</div>' +
+      '<div class="ctext"><div class="ctag">ROOM ' + next + '</div><div class="cname">' + esc(P.name) + '</div><div class="cdesc">' + esc(desc) + ' Target ' + fmt(roomTarget(next, run.cfg, p)) + '.</div></div></button>';
+  }).join('');
+}
+function showNext(fromShop) {
+  const run = App.run, lc = run.lastClear; UI.back = fromShop ? showShop : null;
+  const multi = (run.paths || []).length > 1;
+  UI.show('next', '<div class="col"><h2>' + (fromShop ? 'Choose your next room' : (lc.boss ? 'BOSS DOWN!' : 'ROOM ' + lc.room + ' CLEARED')) + '</h2>' +
+    (fromShop ? '' : '<p class="center muted" style="font-weight:800">' + clearedLine(lc) + '</p>') +
+    '<div class="spacer"></div><h3 class="center">' + (multi ? 'Pick your path' : 'Up next') + '</h3>' + pathCardsHTML(run) +
+    '<p class="center muted">' + shopHint(run) + ' You have ' + co(run.coins) + '</p>' +
+    '<div class="row">' + (fromShop ? '<button class="btn small" data-act="back">\u25C0 Shop</button>' : '') + '<button class="btn small" data-act="viewBagNext">Bag (' + run.bag.length + ')</button></div></div>');
 }
 function showPause() {
   const run = App.run; UI.back = resumeGame;
@@ -2488,6 +2810,7 @@ function showOver() {
   const run = App.run, o = App.overInfo; UI.back = null;
   let delta;
   if (o.assist) delta = '<div class="delta">Assist run (not ranked)</div>';
+  else if (o.rival) delta = o.score > o.rival.s ? '<div class="delta good">You beat ' + esc(o.rival.n) + ' by ' + fmt(o.score - o.rival.s) + '!</div>' : '<div class="delta bad">' + esc(o.rival.n) + ' wins by ' + fmt(o.rival.s - o.score) + '</div>';
   else if (o.prevBest <= 0) delta = '<div class="delta good">First score on the board!</div>';
   else if (o.newBest) delta = '<div class="delta good">NEW PERSONAL BEST! +' + fmt(o.score - o.prevBest) + '</div>';
   else delta = '<div class="delta bad">You missed your best by ' + fmt(o.prevBest - o.score) + '</div>';
@@ -2495,14 +2818,14 @@ function showOver() {
   const ini = App.ini;
   const picker = o.entry ? '<div class="panel"><p class="center" style="font-weight:900">Rank #' + (o.rank + 1) + ' in your Top 10! Initials:</p><div class="ini">' +
     [0, 1, 2].map(i => '<div class="slot"><button data-act="iniUp" data-arg="' + i + '" aria-label="Next letter">▲</button><div class="ch" id="ini' + i + '">' + ini[i] + '</div><button data-act="iniDown" data-arg="' + i + '" aria-label="Previous letter">▼</button></div>').join('') + '</div></div>' : '';
-  UI.show('over', '<div class="col"><h2>' + (run.cfg.mode === 'daily' ? 'DAILY RUN OVER' : 'RUN OVER') + '</h2>' +
+  UI.show('over', '<div class="col"><h2>' + (run.cfg.mode === 'daily' ? 'DAILY RUN OVER' : run.cfg.mode === 'challenge' ? 'CHALLENGE OVER' : 'RUN OVER') + '</h2>' +
     '<p class="center muted" style="font-weight:800">Reached room ' + run.roomIdx + ' · ' + Math.round(o.secs) + 's · best Chaos ×' + run.stats.bestChaos + '</p>' +
     '<div class="big" id="finalScore">0</div>' + delta + picker +
     '<div class="list">' + row('Marble hits', bd.hits) + row('Bumpers', bd.bumpers) + row('Blocks', bd.blocks) + row('Bonuses', bd.bonus) + row('Unused marbles', bd.leftover) + row('Hard mode ×1.5', bd.hard) + '</div>' +
     goalsHTML() +
     '<div class="li c"><div class="grow">Shards earned</div><div class="nm">' + sh('+' + o.shardsTotal) + '</div></div>' +
     '<div class="panel"><p><b>Tip:</b> ' + esc(tipFor(run)) + '</p></div>' +
-    '<div class="spacer"></div><div class="foot"><div class="row"><button class="btn small" data-act="share">Share</button>' + (run.cfg.mode !== 'daily' ? '<button class="btn small" data-act="rematch">Rematch</button>' : '') + '<button class="btn small" data-act="menu">Menu</button></div>' +
+    '<div class="spacer"></div><div class="foot"><div class="row"><button class="btn small blue" data-act="challenge" ' + (run.cfg.assist ? 'disabled' : '') + '>Challenge</button><button class="btn small" data-act="share">Share</button>' + (run.cfg.mode === 'endless' ? '<button class="btn small" data-act="rematch">Rematch</button>' : '') + '<button class="btn small" data-act="menu">Menu</button></div>' +
     '<button class="btn primary" data-act="retry">↻ RETRY</button></div></div>');
   const el = $('finalScore'), target = o.score, t0 = performance.now(), dur = SAVE.settings.reducedMotion ? 0 : 900;
   const stepFn = now => { const k = dur ? clamp((now - t0) / dur, 0, 1) : 1; el.textContent = fmt(target * (1 - Math.pow(1 - k, 3))); if (k < 1 && el.isConnected) requestAnimationFrame(stepFn); };
@@ -2558,13 +2881,17 @@ function handleAct(act, arg) {
     case 'buy': if (App.act({ a: 'buy', i: +arg })) { Sound.buy(); App.afterChoice(); } else Sound.deny(); break;
     case 'reroll': if (App.act({ a: 'reroll' })) { Sound.card(); showShop(); } break;
     case 'viewBag': showPick(true, showShop); break;
-    case 'viewBagNext': showPick(true, showNext); break;
-    case 'leave': if (App.act({ a: 'leave' })) { UI.hide(); App.acc = 0; Platform.wake.request(); } break;
+    case 'viewBagNext': { const fs = UI.back === showShop; showPick(true, () => showNext(fs)); break; }
+    case 'leave': if (App.act({ a: 'leave', i: +arg || 0 })) { UI.hide(); App.acc = 0; Platform.wake.request(); } break;
+    case 'toPaths': showNext(true); break;
+    case 'challenge': shareChallenge(); break;
+    case 'raceChallenge': startChallenge(App.pendingChallenge); break;
+    case 'raceFriend': { const fr = SAVE.friends[+arg]; const ch = fr && decodeChallenge(fr.p); if (ch) startChallenge(ch); else UI.toast('That challenge can’t be played in this version'); break; }
     case 'resume': resumeGame(); break;
     case 'pauseBag': showPick(true, showPause); break;
     case 'pauseSettings': showSettings(showPause); break;
     case 'quit': UI.confirm('Quit this run? It won’t be scored.', 'Quit', () => { App.endRunToMenu(); }); break;
-    case 'retry': App.saveInitials(); startRun(run.cfg.mode === 'daily' ? 'daily' : 'endless'); break;
+    case 'retry': App.saveInitials(); if (run.cfg.mode === 'challenge' && App.lastChallenge) startChallenge(App.lastChallenge); else startRun(run.cfg.mode === 'daily' ? 'daily' : 'endless'); break;
     case 'rematch': App.saveInitials(); startRun('endless', run.cfg.seed); break;
     case 'menu': App.saveInitials(); App.endRunToMenu(); break;
     case 'share': shareRun(); break;
@@ -2618,6 +2945,8 @@ canvas.addEventListener('pointerdown', e => {
     if (Input.aiming) { Input.pid = null; Input.aiming = false; Sound.deny(); Platform.haptics.play([10]); }
     return;
   }
+  const tlb = trayLayout(App.run);
+  if (Math.hypot(e.clientX - tlb.bagX, e.clientY - tlb.y) < 30) { App.viewBag(); return; }   // tap the bag to see all your marbles
   const slot = traySlotAt(App.run, e.clientX, e.clientY);
   if (slot >= 0) { App.selectMarble(slot); return; }        // tap a marble in the tray to throw it next
   try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
@@ -2738,6 +3067,11 @@ const App = {
   ff: false,
   toggleFF() { const run = this.run; if (!run || !run.cleared || run.phase !== 'play') return; this.ff = !this.ff; Sound.ui(); Platform.haptics.play(HAPTIC.tap); },
   tryKick() { const run = this.run; if (run && run.canKick()) run.act({ a: 'kick' }); },
+  viewBag() {
+    if (!this.run || this.run.phase !== 'play') return;
+    this.paused = true; Input.reset(); Sound.ui();
+    showPick(true, () => { UI.hide(); this.paused = false; });
+  },
   selectMarble(i) {
     const run = this.run; if (!run || !run.hand[i]) return;
     if (i === 0 || run.act({ a: 'select', i })) { Sound.card(); Platform.haptics.play(HAPTIC.tap); UI.marbleTip(run.hand[0]); }
@@ -2781,8 +3115,8 @@ const App = {
       if (daily) {
         if (SAVE.daily.date !== todayStr()) SAVE.daily = { date: todayStr(), best: 0, record: null };
         if (score > SAVE.daily.best) { SAVE.daily.best = score; SAVE.daily.record = run.record; newBest = true; }
-      } else if (score > s.bestScore) { s.bestScore = score; SAVE.ghost = run.record; newBest = true; }
-      entry = { score, room: run.roomIdx, mode: daily ? 'Daily' : 'Endless', hard: !!run.cfg.hard, seed: seedStr(run.cfg.seed), date: todayStr(), ini: this.ini.join('') };
+      } else if (run.cfg.mode === 'endless' && score > s.bestScore) { s.bestScore = score; SAVE.ghost = run.record; newBest = true; }
+      entry = { score, room: run.roomIdx, mode: daily ? 'Daily' : run.cfg.mode === 'challenge' ? 'Challenge' : 'Endless', hard: !!run.cfg.hard, seed: seedStr(run.cfg.seed), date: todayStr(), ini: this.ini.join('') };
       SAVE.top10.push(entry); SAVE.top10.sort((a, b) => b.score - a.score); if (SAVE.top10.length > 10) SAVE.top10.length = 10;
       rank = SAVE.top10.indexOf(entry); if (rank < 0) entry = null;
     }
@@ -2791,7 +3125,8 @@ const App = {
     SAVE.shards += shards; s.shardsEarned += shards;
     this.checkGoals();
     persist();
-    this.overInfo = { score, prevBest, newBest, rank, entry, shards, shardsTotal: shards + this.goalShards, secs, daily, assist };
+    if (this.rival) { const fr = SAVE.friends[this.rival.idx]; if (fr) fr.mine = Math.max(fr.mine || 0, score); persist(); }
+    this.overInfo = { score, prevBest, newBest, rank, entry, shards, shardsTotal: shards + this.goalShards, secs, daily, assist, rival: this.rival };
     Platform.wake.release(); Sound.Music.setMode('menu');
     this.slowT = 0.6;
     setTimeout(() => { if (this.run === run && this.state === 'play') { this.state = 'over'; showOver(); } }, 1100);
@@ -2807,25 +3142,77 @@ function pickChallenges(daily) {
   const rng = daily ? RNG(hash32('chal|' + todayStr())) : RNG((Math.random() * 4294967296) >>> 0);
   return rng.shuffle(CHALLENGES.slice()).slice(0, 3);
 }
-function startRun(mode, seed) {
+function startRun(mode, seed, opts) {
   Sound.unlock();
   const daily = mode === 'daily', st = SAVE.settings;
-  const cfg = daily
+  const cfg = opts && opts.cfg ? opts.cfg : daily
     ? { v: GAME_VERSION, mode: 'daily', seed: hash32('CLACK-DAILY-' + todayStr()), loadout: 'classic', pool: ALL_POOL, hard: false, assist: st.assist, perks: [], coins: 0 }
     : { v: GAME_VERSION, mode: 'endless', seed: seed != null ? seed >>> 0 : (Math.random() * 4294967296) >>> 0, loadout: loadoutOwned(st.loadout) ? st.loadout : 'classic', pool: currentPool(), hard: st.hard && owns('mode_hard'), assist: st.assist, perks: ownedPerks(), coins: owns('perk_coins') ? 5 : 0 };
   FX.reset(); Input.reset(); Input.lx = T.W / 2; Input.ly = T.H * 0.8;
   App.run = new Run(cfg, true);
-  const rec = daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.record : null) : SAVE.ghost;
+  const rec = opts && opts.ghost ? opts.ghost : daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.record : null) : SAVE.ghost;
+  App.rival = opts && opts.rival ? opts.rival : null;
   App.ghost = rec && rec.cfg && rec.v === GAME_VERSION ? new Ghost(rec) : null;
   App.ghostVisible = !!(App.ghost && rec.cfg.seed === cfg.seed);
-  App.bestForMode = daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.best : 0) : SAVE.stats.bestScore;
+  App.bestForMode = App.rival ? App.rival.s : daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.best : 0) : SAVE.stats.bestScore;
   App.challenges = pickChallenges(daily); App.chalDone = {}; App.goalShards = 0; App.overInfo = null;
   App.ini = (SAVE.initials || 'AAA').padEnd(3, 'A').slice(0, 3).split('');
-  App.state = 'play'; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.tapHint = 0; App.bufferedFling = null;
+  App.state = 'play'; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.pbShown = false; App.zoom = null; App.tapHint = 0; App.bufferedFling = null;
   UI.hide(); UI.closeModal(); UI.hideCountdown();
   Sound.Music.setMode('play'); Platform.wake.request();
   handleEvents(App.run, false);
   UI.toast('Challenges: ' + App.challenges.map(c => esc(c.text)).join(' · '));
+}
+/* ---------------- friend challenges: your exact run, sent as a link ---------------- */
+const ACT_CODES = ['fling', 'kick', 'bank', 'card', 'skip', 'target', 'cancel', 'buy', 'reroll', 'leave', 'select'];
+function packRecord(rec) {
+  let lt = 0; const a = [];
+  for (const x of rec.actions) {
+    const row = [x.t - lt, ACT_CODES.indexOf(x.a)]; lt = x.t;
+    if (x.a === 'fling') row.push(x.x, x.y, x.g, x.p); else if (x.i !== undefined) row.push(x.i);
+    a.push(row);
+  }
+  return { v: rec.v, c: rec.cfg, a };
+}
+function unpackRecord(p) {
+  let t = 0;
+  const actions = p.a.map(r => { t += r[0]; const o = { a: ACT_CODES[r[1]], t }; if (o.a === 'fling') { o.x = r[2]; o.y = r[3]; o.g = r[4]; o.p = r[5]; } else if (r.length > 2) o.i = r[2]; return o; });
+  return { v: p.v, cfg: p.c, actions };
+}
+const b64e = str => btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64d = str => decodeURIComponent(escape(atob(str.replace(/-/g, '+').replace(/_/g, '/'))));
+function challengeLabel(cfg, date) { return cfg.mode === 'daily' ? 'Daily ' + date : (cfg.from === 'daily' ? 'Daily ' + date : 'Endless \u00B7 seed ' + seedStr(cfg.seed)); }
+function decodeChallenge(code) {
+  try {
+    const p = JSON.parse(b64d(code)), rec = unpackRecord(p.r);
+    if (rec.v !== GAME_VERSION) return null;
+    const rep = replayRun(rec);                         // re-simulate their inputs: the score must match exactly
+    return { code, n: String(p.n || '???').slice(0, 3), s: p.s | 0, d: String(p.d || ''), rec, verified: rep.score === (p.s | 0), room: rep.roomIdx, label: challengeLabel(rec.cfg, p.d) };
+  } catch (e) { return null; }
+}
+async function shareChallenge() {
+  const run = App.run; if (!run || run.cfg.assist) return;
+  const payload = { n: App.ini.join(''), s: run.score, d: todayStr(), r: packRecord(run.record) };
+  const link = location.href.split('#')[0] + '#c=' + b64e(JSON.stringify(payload));
+  const text = 'I scored ' + fmt(run.score) + ' in CLACK (' + challengeLabel(run.cfg, todayStr()) + '). Same rooms, my ghost races you. Beat me:';
+  const res = await Platform.share(text + '\n' + link);
+  if (res === 'copied') UI.toast('Challenge link copied'); else if (res === 'manual') UI.showText('Send this challenge', text + '\n' + link);
+}
+function showChallenge(ch) {
+  UI.back = showTitle; App.state = 'title';
+  UI.show('challenge', '<div class="col"><h2>Challenge!</h2><div class="spacer"></div>' +
+    '<div class="panel center"><p style="font-size:22px;font-weight:900">' + esc(ch.n) + ' scored ' + fmt(ch.s) + '</p><p class="muted" style="font-weight:800">' + esc(ch.label) + ' \u00B7 reached room ' + ch.room + '</p>' +
+    '<p style="font-weight:900;color:' + (ch.verified ? 'var(--good)' : 'var(--bad)') + '">' + (ch.verified ? '\u2713 Verified: their run was replayed and matches' : '\u26A0 This score didn\u2019t match a replay') + '</p></div>' +
+    '<p class="center muted">Same rooms, same upgrades offered. Their ghost marbles race you.</p>' +
+    '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="raceChallenge">RACE THEIR GHOST</button><button class="btn small ghost" data-act="back">Not now</button></div></div>');
+}
+function startChallenge(ch) {
+  let idx = SAVE.friends.findIndex(fr => fr.p === ch.code);
+  if (idx < 0) { SAVE.friends.unshift({ n: ch.n, s: ch.s, d: ch.d, label: ch.label, verified: ch.verified, p: ch.code, mine: 0 }); if (SAVE.friends.length > 20) SAVE.friends.length = 20; idx = 0; persist(); }
+  App.lastChallenge = ch;
+  const cfg = JSON.parse(JSON.stringify(ch.rec.cfg)); cfg.from = cfg.mode === 'challenge' ? cfg.from : cfg.mode; cfg.mode = 'challenge';
+  startRun('challenge', null, { cfg, ghost: ch.rec, rival: { n: ch.n, s: ch.s, idx } });
+  App.ghostVisible = true;
 }
 function gameTick() {
   const run = App.run;
@@ -2889,7 +3276,7 @@ function frame(now) {
   if (document.visibilityState === 'visible') Perf.sample(dt);
   pollGamepad(dt); keyboardUpdate(dt);
   let ts = 1;
-  if (App.ff) { ts = 10; App.stopT = 0; App.slowT = 0; }
+  if (App.ff) { ts = 3; App.stopT = 0; App.slowT = 0; }
   else if (App.stopT > 0) { App.stopT -= dt; ts = 0.05; } else if (App.slowT > 0) { App.slowT -= dt; ts = 0.35; }
   if (App.state === 'play' || App.state === 'over') {
     const run = App.run;
@@ -2958,6 +3345,12 @@ function boot() {
   setupPWA();
   newAttract();
   showTitle();
+  const m = location.hash.match(/^#c=(.+)$/);
+  if (m) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    const ch = decodeChallenge(m[1]);
+    if (ch) { App.pendingChallenge = ch; showChallenge(ch); } else UI.toast('This challenge link is from a different version of the game.');
+  }
   requestAnimationFrame(t => { App.last = t; App.lastDraw = t; requestAnimationFrame(frame); });
 }
 // Debug / QA hooks (also handy for a native wrapper or server-side verifier).

@@ -16,9 +16,10 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 |---|---|---|---|
 | Place and fling | Touch anywhere to drop the marble there, pull back, release | Arrows/WASD move the drop point, Q/E aim, hold and release Space | Left stick moves, right stick aims, hold and release A |
 | Choose the next marble | Tap it in the tray under the board | Number keys 2–9, or Tab | Right/left bumper |
+| See your whole bag (pauses) | Tap the bag icon left of the tray | — | — |
 | Cancel a shot | Drag back into the ✕ ring and let go, or touch with a second finger | Esc while charging | B while charging |
 | Kick (speed up rolling marbles) | Quick tap | K / X / Shift | X or B |
-| Fast-forward 10× (after the target is met) | Fast Forward button | F | Y |
+| Fast-forward 3× (after the target is met) | Fast Forward button | F | Y |
 | Cash out early | Cash Out button | Enter | Y |
 | Pause | Top-corner button | Esc / P | Start |
 
@@ -26,16 +27,22 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 
 1. You start with **5 Clay marbles**. Each room deals 5 at random from your bag (the bag icon under the board shows how many you own).
 2. Pick which marble to throw next from the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
-3. Hit the target score to clear the room. The shop opens after every third room (rooms 2, 5, 8...). After other rooms there's sometimes a free powerup (1 of 3; always after room 1 and boss rooms).
+3. Hit the target score to clear the room, then **pick your path**: two room types to choose from (Gold, Calm, Elite, Wild, Standard). The shop opens after every third room (rooms 2, 5, 8...). After other rooms there's sometimes a free powerup (1 of 3; always after room 1 and boss rooms).
 4. If your last marble stops short of the target, the run ends.
 
 **Scoring:** bumpers, blocks and especially marble-on-marble hits score points. Points are multiplied by marble level and material, then by the **Chaos Meter** (×1 → ×2 → ×3 → ×5 → ×8 RIOT), which fills with every hit and drains when things go quiet.
 
-**Upgrades:** 6 materials (Clay, Steel, Rubber, Glass, Ice, Lead), 12 engravings (Spark, Bomb, Magnet, Gold, Crown, Seed, Frost, Clone, Echo, Pinball, Fuse, Prism) and 12 charms that change the rules for the whole run.
+**Upgrades:** common, rare and legendary. 6 materials, 14 engravings (including the legendary Black Hole and Split Shot) and 14 charms (including the legendary Overcharge and Lucky Seven).
 
-**Events:** golden orbs, room modifiers (Slick Floor, Sticky Floor, Super Walls, Blackout, Gold Fever, Bumper Party) and a boss every 4th room (The Warden, Juggernaut, The Pit, Nullifier).
+**Combos:** 12 named combos (Storm Cell, Chain Reaction, Event Horizon...) trigger when two engravings meet in one collision. Discovered combos fill a codex under Records.
+
+**Arcade board:** big bumpers that light up (light them all for a ×2 Frenzy), ×2 and ×3 gates, boost pads, vortexes, multiball orbs and collectible stars.
+
+**Events:** golden orbs, room modifiers (Slick Floor, Sticky Floor, Super Walls, Blackout, Gold Fever, Bumper Party) and a boss every 5th room with a health bar and telegraphed attacks (The Warden, The Crusher, The Spinner, Juggernaut, The Glutton).
 
 **Modes:** Endless, Daily Seed (same rooms for everyone each day), unlockable Hard mode, and Assist mode (not ranked).
+
+**Friend challenges:** after a run, tap Challenge to send a link with your exact run. Their phone replays it to verify the score, then they race your ghost on the same rooms.
 
 **Progress:** shards from every run, 3 rotating challenges per run, 17 achievements, a Workshop of unlocks (materials, engravings, charm packs, starting bags, perks, themes), a local top 10, and a ghost of your best run to race.
 
