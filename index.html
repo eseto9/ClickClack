@@ -261,6 +261,7 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
 #bankBtn{background:var(--accent);color:#fff}
 #ffBtn{background:var(--green);color:#fff}
 #ffBtn.on{background:var(--card);color:var(--ink)}
+.bagpit{width:100%;height:190px;flex:0 0 190px;border-radius:20px;background:var(--card);box-shadow:var(--shadow);touch-action:none;display:block}
 #bankBtn:active,#ffBtn:active{transform:translateX(-50%);opacity:.7;box-shadow:0 6px 20px rgba(0,0,0,.18)}
 </style>
 </head>
@@ -3000,8 +3001,59 @@ function showPick(viewOnly, backFn) {
   else foot = '';
   UI.show('pick', '<div class="col"><h2>' + (viewOnly ? 'Your bag (' + run.bag.length + ')' : esc(pickTitle(p.card))) + '</h2>' +
     (viewOnly ? (run.phase === 'play' ? '<p class="center muted">Game paused. Each room deals ' + run.handSize + ' of these at random; ' + run.hand.length + ' still in your hand.</p>' : '') : '<p class="center muted">' + esc(cardInfo(p.card).desc || '') + '</p>') +
+    (viewOnly ? '<canvas class="bagpit" id="bagpit" aria-label="Your marbles rolling around in the bag"></canvas>' : '') +
     '<div class="grid">' + tiles + '</div>' + (viewOnly ? charms : '') + '<div class="spacer"></div>' + (foot ? '<div class="foot">' + foot + '</div>' : '') + '</div>');
+  if (viewOnly) BagPit.start(document.getElementById('bagpit'), run.bag);
 }
+// The bag view: every marble you own rolls around a little tray. Marbles drop in, settle,
+// and get jostled every so often; touch the tray to shake them. Purely cosmetic.
+const BagPit = {
+  start(cv, bag) {
+    if (!cv) return;
+    const d = Math.min(3, window.devicePixelRatio || 1), W = cv.clientWidth || 320, H = cv.clientHeight || 190;
+    cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+    const g = cv.getContext('2d'), k = Math.min(1.25, Math.max(0.7, Math.sqrt(W * H / Math.max(1, bag.length) / 1400)));
+    const balls = bag.map((m, i) => { const r = Math.min(26, MATS[m.mat].r * sizeOf(m).r * k); return { m, r, x: r + Math.random() * (W - 2 * r), y: -r - i * 18 - Math.random() * 30, vx: (Math.random() - 0.5) * 160, vy: 0, a: Math.random() * TAU }; });
+    let last = performance.now(), nextJostle = 1.2;
+    const shake = (px, py) => { for (const b of balls) { const dx = b.x - px, dy = b.y - py, dd = Math.hypot(dx, dy) || 1; b.vx += dx / dd * 260 + (Math.random() - 0.5) * 120; b.vy -= 200 + Math.random() * 160; } Platform.haptics.play([8]); };
+    cv.addEventListener('pointerdown', e => { const r = cv.getBoundingClientRect(); shake(e.clientX - r.left, e.clientY - r.top); });
+    const rm = SAVE.settings.reducedMotion;
+    const step = now => {
+      if (!document.body.contains(cv)) return;
+      const dt = Math.min(0.033, (now - last) / 1000); last = now;
+      if (!rm && (nextJostle -= dt) <= 0) {   // a little nudge so the bag never sits still
+        nextJostle = 1.5 + Math.random() * 1.8;
+        const b = balls[Math.floor(Math.random() * balls.length)]; if (b) { b.vx += (Math.random() < 0.5 ? -1 : 1) * (140 + Math.random() * 160); b.vy -= 120 + Math.random() * 140; }
+      }
+      for (let it = 0; it < 2; it++) {
+        const h = dt / 2;
+        for (const b of balls) {
+          b.vy += 900 * h; b.x += b.vx * h; b.y += b.vy * h;
+          if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx) * 0.6; } else if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx) * 0.6; }
+          if (b.y > b.r) b.in = true; else if (b.in) { b.y = b.r; b.vy = Math.abs(b.vy) * 0.5; }
+          if (b.y > H - b.r) { b.y = H - b.r; b.vy = -Math.abs(b.vy) * 0.35; b.vx *= Math.pow(0.4, h); }
+        }
+        for (let i = 0; i < balls.length; i++) for (let j = i + 1; j < balls.length; j++) {
+          const p = balls[i], q = balls[j], dx = q.x - p.x, dy = q.y - p.y, rr = p.r + q.r, d2 = dx * dx + dy * dy;
+          if (d2 >= rr * rr || d2 === 0) continue;
+          const dd = Math.sqrt(d2), nx = dx / dd, ny = dy / dd, ov = (rr - dd) / 2;
+          p.x -= nx * ov; p.y -= ny * ov; q.x += nx * ov; q.y += ny * ov;
+          const rel = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny;
+          if (rel < 0) { const imp = -rel * 0.8 / 2; p.vx -= nx * imp; p.vy -= ny * imp; q.vx += nx * imp; q.vy += ny * imp; }
+        }
+      }
+      g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, W, H);
+      const sh = shadowSprite();
+      for (const b of balls) {
+        b.a += b.vx / b.r * dt;   // roll: spin follows sideways speed
+        g.globalAlpha = 0.8; g.drawImage(sh, b.x - b.r * 1.05 + 1.5, b.y - b.r * 0.85 + 3, b.r * 2.3, b.r * 2); g.globalAlpha = 1;
+        drawMarble(g, b.x, b.y, b.r, b.r * d, b.m.mat, b.m.eng, b.a);
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  },
+};
 function shopItemInfo(it) {
   if (it.kind === 'marble') return { name: (it.rarity && it.rarity !== 'c' ? RARITY[it.rarity].name.charAt(0) + RARITY[it.rarity].name.slice(1).toLowerCase() + ' · ' : '') + marbleName(it), desc: ENGS[it.eng[0]].desc + (it.eng[1] ? ' Also: ' + ENGS[it.eng[1]].name + '.' : ''), prev: prevCanvas(it.mat, it.eng, true) };
   if (it.kind === 'charm') return { name: CHARMS[it.charm].name + ' (charm)', desc: CHARMS[it.charm].desc + ' ' + App.run.charms.length + '/' + T.CHARM_SLOTS + ' slots used.', prev: '<div class="badge sm">' + CHARMS[it.charm].glyph + '</div>' };

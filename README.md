@@ -19,7 +19,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 |---|---|---|---|
 | Place and fling | Touch anywhere to drop the marble there, pull back, release | Arrows/WASD move the drop point, Q/E aim, hold and release Space | Left stick moves, right stick aims, hold and release A |
 | Choose the next marble | Drag it to the first spot in the tray (or tap it) | Number keys 2–9, or Tab | Right/left bumper |
-| See your whole bag (pauses) | Tap the bag icon left of the tray | — | — |
+| See your whole bag (pauses) | Tap the bag icon left of the tray. Your marbles roll around inside; touch it to shake them | — | — |
 | Cancel a shot | Drag back into the ✕ ring and let go, or touch with a second finger | Esc while charging | B while charging |
 | Kick (speed up rolling marbles) | Quick tap | K / X / Shift | X or B |
 | Fast-forward (after the target is met) | Fast Forward button: 3× speed, room wraps up within 3 seconds | F | Y |
