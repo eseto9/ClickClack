@@ -1849,8 +1849,21 @@ const Perf = {
 };
 function onQualityChange() { computeLayout(); }
 
+// The real drawable size. iOS can under-report innerHeight in a home-screen web app
+// (and right after launch), which left a dead band at the bottom; use the screen there.
+function viewportSize() {
+  const de = document.documentElement, vv = window.visualViewport;
+  let w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight, de.clientHeight || 0, vv ? Math.round(vv.height) : 0);
+  const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (standalone && screen && screen.width) {
+    const sw = Math.min(screen.width, screen.height), sh = Math.max(screen.width, screen.height);
+    if (w <= h && Math.abs(w - sw) < 2) h = Math.max(h, sh);
+  }
+  return [w, h];
+}
 function computeLayout() {
-  const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
+  const [vw, vh] = viewportSize();
+  canvas.style.height = vh + 'px'; const uiEl = document.getElementById('ui'); if (uiEl) uiEl.style.height = vh + 'px';
   const cs = getComputedStyle(probe);
   L.sat = parseFloat(cs.paddingTop) || 0; L.sab = parseFloat(cs.paddingBottom) || 0;
   L.sal = parseFloat(cs.paddingLeft) || 0; L.sar = parseFloat(cs.paddingRight) || 0;
@@ -1859,9 +1872,9 @@ function computeLayout() {
   L.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, cap));
   L.colW = Math.min(vw - L.sal - L.sar, 560);
   L.colX = L.sal + (vw - L.sal - L.sar - L.colW) / 2;
-  L.hudTop = L.sat + 6; L.hudH = 78; L.tickH = 20;
+  L.hudTop = L.sat + (L.sat > 20 ? 10 : 8); L.hudH = 78; L.tickH = 20;
   L.trayH = 94;
-  const trayBottom = vh - L.sab - 4;
+  const trayBottom = vh - Math.max(6, Math.round(L.sab * 0.55));   // the info line may sit beside the home indicator
   const availTop = L.hudTop + L.hudH + L.tickH, availH = trayBottom - L.trayH - availTop - 4;
   const availW = L.colW - 12;
   L.s = Math.max(0.25, Math.min(availW / T.W, availH / T.H));
@@ -3683,6 +3696,9 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('blur', () => pauseGame());
 window.addEventListener('pagehide', persist);
 window.addEventListener('resize', onResize);
+if (window.visualViewport) visualViewport.addEventListener('resize', onResize);
+window.addEventListener('pageshow', () => setTimeout(onResize, 50));
+[250, 1000, 2500].forEach(ms => setTimeout(() => { const [w, h] = viewportSize(); if (w !== L.vw || h !== L.vh) onResize(); }, ms));   // iOS settles its viewport late
 window.addEventListener('orientationchange', () => { pauseGame(); setTimeout(onResize, 300); });
 window.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('gesturestart', e => e.preventDefault());
