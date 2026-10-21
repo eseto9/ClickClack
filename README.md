@@ -1,6 +1,6 @@
 # ClickClack
 
-**CLACK** is a one-thumb marble roguelite for phones, set on a neon arcade table: deep indigo felt, glowing orange bumpers and a neon-trimmed frame. Drop a marble anywhere, pull back, let go, and make everything collide. Every collision scores. Reach the room's target to move on.
+**CLACK** is a one-thumb marble roguelite for phones, with a clean, minimal iOS-inspired look: a white card table, flat system-colour bumpers and blocks, and bright marbles you can tell apart at a glance. Drop a marble anywhere, pull back, let go, and make everything collide. Every collision scores. Reach the room's target to move on.
 
 The whole game is one offline HTML file ([index.html](index.html)) with no assets, libraries or network calls.
 
@@ -54,7 +54,7 @@ Every run uses a random seed, and every engraving, material and charm can show u
 
 ## Settings
 
-Sound and music start **muted**; tap the Sound chip on the title screen or use Settings to turn them on. Settings also has haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, table themes (Dusk, Ocean, Ember, Forest, High Contrast) and Assist mode. Hard mode is a toggle on the title screen.
+Sound and music start **muted**; tap the Sound chip on the title screen or use Settings to turn them on. Settings also has haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, themes (Auto follows your phone's light/dark mode, Light, Dark, High Contrast) and Assist mode. Hard mode is a toggle on the title screen.
 
 ## Technical notes
 
