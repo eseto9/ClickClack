@@ -261,6 +261,38 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
 #bankBtn{background:var(--accent);color:#fff}
 #ffBtn{background:var(--green);color:#fff}
 #ffBtn.on{background:var(--card);color:var(--ink)}
+.ico{width:34px;height:34px;flex:0 0 34px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+.ico svg{width:20px;height:20px}
+.group{background:var(--card);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.hrow{display:flex;align-items:center;gap:12px;padding:11px 14px;min-height:58px;position:relative}
+.hrow+.hrow:before{content:"";position:absolute;top:0;right:0;left:60px;height:1px;background:var(--line)}
+.hrow .nm{font-weight:600;font-size:17px;line-height:1.2}
+.hrow .ds{color:var(--muted);font-size:14px;line-height:1.25}
+.hrow .right{text-align:right;white-space:nowrap}
+.hrow .grow{flex:1;min-width:0}
+.hrow.locked .nm{color:var(--muted)}
+.small{font-size:14px}
+.rank{width:30px;height:30px;flex:0 0 30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+.pill{background:var(--fill);color:var(--ink);border-radius:999px;padding:4px 10px;font-weight:600;font-size:14px}
+.hero{background:var(--card);border-radius:18px;padding:18px;text-align:center;box-shadow:var(--shadow)}
+.hero .cap{color:var(--muted);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.hero .hnum{font-size:44px;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin:4px 0}
+.hero .of{font-size:24px;color:var(--muted);font-weight:600}
+.hero .hsub{color:var(--muted);font-size:14px;margin-top:4px}
+.pbar{height:6px;border-radius:3px;background:var(--fill);overflow:hidden;margin:8px 10%}
+.pbar i{display:block;height:100%;background:var(--orange);border-radius:3px}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow)}
+.stat .sv{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.statgrid .stat:last-child:nth-child(odd),.awgrid .aw:last-child:nth-child(odd){grid-column:span 2}
+.stat .sk{color:var(--muted);font-size:13px;font-weight:600;margin-top:2px}
+.awgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.aw{background:var(--card);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+.aw:not(.got){opacity:.55}
+.aw .an{font-weight:600;font-size:15px;line-height:1.2}
+.aw .ad{color:var(--muted);font-size:13px;line-height:1.25}
+.seg.wide{width:100%}.seg.wide button{flex:1 1 0;min-width:0;padding:0 2px;font-size:14px;min-height:36px}
+.empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 10px}
 #bankBtn:active,#ffBtn:active{transform:translateX(-50%);opacity:.7;box-shadow:0 6px 20px rgba(0,0,0,.18)}
 </style>
 </head>
@@ -2905,16 +2937,30 @@ function showTitle() {
   Sound.Music.setMode('menu');
 }
 
+// Small line icons for menus (iOS-settings style: white glyph on a coloured rounded square).
+const ICON = {
+  fling: '<path d="M7 17 17 7M17 7h-7M17 7v7"/>',
+  hit: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8"/>',
+  tap: '<path d="M9 11V6a2 2 0 0 1 4 0v5M13 10a2 2 0 0 1 4 0v4a6 6 0 0 1-6 6h-1a5 5 0 0 1-4-2l-2.5-3.5a1.6 1.6 0 0 1 2.5-2L9 15"/>',
+  bag: '<rect x="5" y="8" width="14" height="12" rx="3"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+  trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
+  lock: '<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+};
+const ico = (name, col, fill) => '<span class="ico" style="background:' + col + '"><svg viewBox="0 0 24 24" fill="' + (fill ? '#fff' : 'none') + '" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + ICON[name] + '</svg></span>';
 function showHelp(back, first) {
   UI.back = back;
-  const step = (n, title, body) => '<div class="li"><div class="badge sm" style="color:var(--accent)">' + n + '</div><div class="grow"><div class="nm">' + title + '</div><div class="ds">' + body + '</div></div></div>';
-  UI.show('help', '<div class="col"><h2>How to play</h2><div class="list">' +
-    step(1, 'Drop, pull back, let go', 'Touch anywhere on the board to place your marble, pull back like a slingshot, release to fling. Drag back to the \u2715 ring to cancel.') +
-    step(2, 'Every collision scores', 'Bumpers, blocks, stars and especially other marbles. Every hit makes that marble 1% bigger for the rest of the room, so busy marbles grow into wrecking balls. Fast chains fill the Chaos meter (\u00D72 \u2192 \u00D78).') +
-    step(3, 'Beat the target', 'Reach the room\u2019s target before your last marble stops. Leftover marbles pay coins.') +
-    step(4, 'Tap to kick', 'A quick tap speeds up rolling marbles (2 per room). Drag a marble in the tray to the first spot (or tap it) to throw it next; tap the bag to see them all.') +
-    step(5, 'Upgrade and choose', 'Between rooms: free powerups, a shop every 3 rooms, and you pick the next room type. A boss waits every 5th room.') +
-    '</div><div class="spacer"></div><div class="foot"><button class="btn primary" data-act="' + (first ? 'helpGo' : 'back') + '">' + (first ? '\u25B6 LET\u2019S GO' : 'Got it') + '</button></div></div>');
+  const step = (icon, col, title, body) => '<div class="hrow">' + ico(icon, col) + '<div class="grow"><div class="nm">' + title + '</div><div class="ds">' + body + '</div></div></div>';
+  UI.show('help', '<div class="col"><h2>How to play</h2><div class="group">' +
+    step('fling', 'var(--blue)', 'Fling', 'Touch the board, pull back, let go.') +
+    step('hit', 'var(--orange)', 'Collide', 'Every hit scores. Marbles grow as they hit.') +
+    step('target', 'var(--green)', 'Beat the target', 'Fill the bar before your marbles stop.') +
+    step('tap', 'var(--purple)', 'Kick', 'Quick tap to speed things up. 2 per room.') +
+    step('bag', 'var(--red)', 'Upgrade', 'Shop every 3 rooms. Boss every 5th.') +
+    '</div><p class="center muted small">Tip: drag a marble to the first spot in the tray to throw it next.</p>' +
+    '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="' + (first ? 'helpGo' : 'back') + '">' + (first ? 'Let\u2019s go' : 'Got it') + '</button></div></div>');
 }
 function showSettings(back) {
   UI.back = back;
@@ -2936,25 +2982,29 @@ function showRecords(tab) {
   UI.back = showTitle; tab = tab || 'top';
   const s = SAVE.stats; let body = '';
   if (tab === 'top') {
-    body = SAVE.top10.length ? '<div class="list">' + SAVE.top10.map((e, i) => '<div class="li"><div class="nm" style="width:28px">' + (i + 1) + '</div><div class="grow"><div class="nm">' + esc(e.ini) + ' — ' + fmt(e.score) + '</div><div class="ds">' + e.mode + (e.hard ? ' · Hard' : '') + ' · Room ' + e.room + ' · ' + e.date + ' · Seed ' + e.seed + '</div></div></div>').join('') + '</div>'
-      : '<p class="muted center">No runs yet. Go make some noise.</p>';
+    const hero = '<div class="hero"><div class="cap">Best score</div><div class="hnum">' + fmt(s.bestScore || 0) + '</div><div class="hsub">Furthest room ' + (s.bestRoom || 0) + ' \u00B7 ' + (s.runs || 0) + ' runs</div></div>';
+    const medal = i => i === 0 ? '#FFCC00' : i === 1 ? '#C7C7CC' : i === 2 ? '#D9A066' : 'var(--fill)';
+    body = hero + (SAVE.top10.length ? '<div class="group">' + SAVE.top10.map((e, i) => '<div class="hrow"><span class="rank" style="background:' + medal(i) + ';color:' + (i < 3 ? '#fff' : 'var(--muted)') + '">' + (i + 1) + '</span><div class="grow"><div class="nm">' + fmt(e.score) + '</div><div class="ds">' + esc(e.ini) + ' \u00B7 Room ' + e.room + (e.hard ? ' \u00B7 Hard' : '') + '</div></div><div class="ds right">' + esc(e.date) + '</div></div>').join('') + '</div>'
+      : '<p class="muted center">No runs yet. Go make some noise.</p>');
   } else if (tab === 'stats') {
-    const row = (k, v) => '<div class="li"><div class="grow">' + k + '</div><div class="nm">' + v + '</div></div>';
-    const dailyBest = SAVE.daily.date === todayStr() ? SAVE.daily.best : 0;
-    body = '<div class="list">' + row('Best score', fmt(s.bestScore)) + row('Furthest room', s.bestRoom) + row('Best combo chain', s.bestChain) +
-      row('Best Chaos', '×' + s.bestChaos) + row('Longest run', Math.round(s.longestRun) + 's') + row('Total runs', s.runs) + row('Rooms cleared', s.totalRooms) + '</div>';
+    const tile = (v, k, col) => '<div class="stat"><div class="sv" style="color:' + col + '">' + v + '</div><div class="sk">' + k + '</div></div>';
+    body = '<div class="statgrid">' + tile(fmt(s.bestScore || 0), 'Best score', 'var(--blue)') + tile(s.bestRoom || 0, 'Furthest room', 'var(--green)') +
+      tile(s.bestChain || 0, 'Best chain', 'var(--orange)') + tile('\u00D7' + (s.bestChaos || 1), 'Best Chaos', 'var(--purple)') +
+      tile(Math.round(s.longestRun || 0) + 's', 'Longest run', 'var(--red)') + tile(s.runs || 0, 'Runs', 'var(--ink)') + tile(s.totalRooms || 0, 'Rooms cleared', 'var(--ink)') + '</div>';
   } else if (tab === 'combos') {
     const found = COMBOS.filter(c => SAVE.combos[c.id]).length;
-    body = '<p class="center muted">' + found + ' of ' + COMBOS.length + ' combos discovered. Combos trigger when two engravings meet in one collision.</p><div class="list">' +
-      COMBOS.map(c => { const got = !!SAVE.combos[c.id]; return '<div class="li ' + (got ? '' : 'done') + '"><div class="grow"><div class="nm">' + (got ? esc(c.name) : '???') + '</div><div class="ds">' + (got ? ENGS[c.a].name + ' + ' + ENGS[c.b].name : ENGS[c.a].name + ' + ???') + '</div></div><div class="nm">+' + c.bonus + '</div></div>'; }).join('') + '</div>';
+    body = '<div class="hero"><div class="cap">Combos found</div><div class="hnum">' + found + '<span class="of"> / ' + COMBOS.length + '</span></div><div class="pbar"><i style="width:' + Math.round(found / COMBOS.length * 100) + '%"></i></div><div class="hsub">Two engravings meeting in one hit</div></div><div class="group">' +
+      COMBOS.map(c => { const got = !!SAVE.combos[c.id]; return '<div class="hrow ' + (got ? '' : 'locked') + '">' + ico(got ? 'star' : 'lock', got ? 'var(--orange)' : 'var(--muted)', got) + '<div class="grow"><div class="nm">' + (got ? esc(c.name) : 'Undiscovered') + '</div><div class="ds">' + (got ? ENGS[c.a].name + ' + ' + ENGS[c.b].name : ENGS[c.a].name + ' + ?') + '</div></div><div class="pill">+' + c.bonus + '</div></div>'; }).join('') + '</div>';
   } else if (tab === 'friends') {
-    body = SAVE.friends.length ? '<div class="list">' + SAVE.friends.map((fr, i) => '<div class="li"><div class="grow"><div class="nm">' + esc(fr.n) + ' — ' + fmt(fr.s) + (fr.verified ? ' ✓' : '') + '</div><div class="ds">' + esc(fr.label) + (fr.mine ? ' · You: ' + fmt(fr.mine) + (fr.mine > fr.s ? ' (you win)' : '') : '') + '</div></div><button class="btn small" data-act="raceFriend" data-arg="' + i + '">Race</button></div>').join('') + '</div>'
-      : '<p class="muted center">No challenges yet. Finish a run and tap Challenge to send a friend your exact run. Their phone replays it as a ghost.</p>';
+    body = SAVE.friends.length ? '<div class="group">' + SAVE.friends.map((fr, i) => '<div class="hrow">' + ico('link', 'var(--blue)') + '<div class="grow"><div class="nm">' + esc(fr.n) + ' \u00B7 ' + fmt(fr.s) + (fr.verified ? ' \u2713' : '') + '</div><div class="ds">' + (fr.mine ? 'You: ' + fmt(fr.mine) + (fr.mine > fr.s ? ' \u00B7 you win' : '') : esc(fr.label)) + '</div></div><button class="btn small" data-act="raceFriend" data-arg="' + i + '">Race</button></div>').join('') + '</div>'
+      : '<div class="empty">' + ico('link', 'var(--blue)') + '<p class="muted center">No challenges yet. Finish a run and tap Challenge to send a friend your exact run.</p></div>';
   } else {
-    body = '<div class="list">' + ACHIEVEMENTS.map(a => { const got = !!SAVE.achievements[a.id]; const hidden = a.secret && !got; return '<div class="li ' + (got ? '' : 'done') + '"><div class="nm" style="width:28px">' + (got ? '★' : '☆') + '</div><div class="grow"><div class="nm">' + (hidden ? '???' : esc(a.name)) + '</div><div class="ds">' + (hidden ? 'A secret technique.' : esc(a.desc)) + '</div></div></div>'; }).join('') + '</div>';
+    const got = ACHIEVEMENTS.filter(a => SAVE.achievements[a.id]).length;
+    body = '<div class="hero"><div class="cap">Awards</div><div class="hnum">' + got + '<span class="of"> / ' + ACHIEVEMENTS.length + '</span></div><div class="pbar"><i style="width:' + Math.round(got / ACHIEVEMENTS.length * 100) + '%"></i></div></div><div class="awgrid">' +
+      ACHIEVEMENTS.map(a => { const g2 = !!SAVE.achievements[a.id], hidden = a.secret && !g2; return '<div class="aw ' + (g2 ? 'got' : '') + '">' + ico(g2 ? 'trophy' : 'lock', g2 ? 'var(--orange)' : 'var(--muted)') + '<div class="an">' + (hidden ? 'Secret' : esc(a.name)) + '</div><div class="ad">' + (hidden ? 'A secret technique.' : esc(a.desc)) + '</div></div>'; }).join('') + '</div>';
   }
-  const tb = (id, n) => '<button class="btn ' + (tab === id ? 'on' : '') + '" data-act="rtab" data-arg="' + id + '">' + n + '</button>';
-  UI.show('records', '<div class="col"><h2>Records</h2><div class="tabs">' + tb('top', 'Top 10') + tb('stats', 'Stats') + tb('ach', 'Awards') + tb('combos', 'Combos') + tb('friends', 'Friends') + '</div>' + body + '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Back</button></div></div>');
+  const tb = (id, n) => '<button class="' + (tab === id ? 'on' : '') + '" data-act="rtab" data-arg="' + id + '">' + n + '</button>';
+  UI.show('records', '<div class="col"><h2>Records</h2><div class="seg wide">' + tb('top', 'Top 10') + tb('stats', 'Stats') + tb('ach', 'Awards') + tb('combos', 'Combos') + tb('friends', 'Friends') + '</div>' + body + '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="back">Done</button></div></div>');
 }
 
 function cardInfo(c) {
