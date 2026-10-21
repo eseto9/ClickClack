@@ -257,7 +257,7 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
 #countdown .n{font-family:inherit;font-weight:700;color:var(--ink);text-shadow:none}
 #countdown .t{color:var(--accent);font-weight:600}
 .iconbtn{background:var(--card);border:0;color:var(--ink);border-radius:50%;width:44px;height:44px;font-size:17px;box-shadow:var(--shadow)}
-#bankBtn,#ffBtn{font-family:inherit;font-weight:600;letter-spacing:0;border:0;border-radius:14px;font-size:19px;min-height:54px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#bankBtn,#ffBtn{font-family:inherit;font-weight:600;letter-spacing:0;border:0;border-radius:14px;font-size:17px;min-height:40px;padding:6px 18px;min-width:200px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
 #bankBtn{background:var(--accent);color:#fff}
 #ffBtn{background:var(--green);color:#fff}
 #ffBtn.on{background:var(--card);color:var(--ink)}
@@ -1827,16 +1827,16 @@ function computeLayout() {
   L.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, cap));
   L.colW = Math.min(vw - L.sal - L.sar, 560);
   L.colX = L.sal + (vw - L.sal - L.sar - L.colW) / 2;
-  L.hudTop = L.sat + 6; L.hudH = 124; L.tickH = 30;
-  L.trayH = 142;
-  const trayBottom = vh - L.sab - 6;
-  const availTop = L.hudTop + L.hudH + L.tickH, availH = trayBottom - L.trayH - availTop - 6;
-  const availW = L.colW - 20;
+  L.hudTop = L.sat + 6; L.hudH = 78; L.tickH = 20;
+  L.trayH = 94;
+  const trayBottom = vh - L.sab - 4;
+  const availTop = L.hudTop + L.hudH + L.tickH, availH = trayBottom - L.trayH - availTop - 4;
+  const availW = L.colW - 12;
   L.s = Math.max(0.25, Math.min(availW / T.W, availH / T.H));
   L.aw = T.W * L.s; L.ah = T.H * L.s;
   L.ax = L.colX + (L.colW - L.aw) / 2;
   L.ay = availTop + Math.max(0, (availH - L.ah) * 0.5);
-  L.trayY = Math.min(trayBottom - L.trayH, L.ay + L.ah + 8);
+  L.trayY = Math.min(trayBottom - L.trayH, L.ay + L.ah + 6);
   L.trayY = Math.max(L.trayY, L.ay + L.ah + 4);
   canvas.width = Math.round(vw * L.dpr); canvas.height = Math.round(vh * L.dpr);
   Sprites.clear(); buildBoard(); buildBackground();
@@ -2176,7 +2176,7 @@ const FX = {
       const tIn = showSub ? b.t - b.dur * 0.5 : b.t, kin = clamp(tIn / 0.14, 0, 1), kout = clamp((b.dur - b.t) / 0.2, 0, 1);
       const sc = SAVE.settings.reducedMotion ? 1 : 0.75 + 0.25 * (1 - Math.pow(1 - kin, 3));
       g.save(); g.globalAlpha = Math.min(kin, kout); g.translate(cx, cy); g.scale(sc, sc); g.textAlign = 'center'; g.textBaseline = 'middle';
-      let size = showSub ? 16 : 22; g.font = font(700, size); const w = g.measureText(txt2).width; if (w > maxW) { size = Math.max(13, Math.floor(size * maxW / w)); g.font = font(700, size); }
+      let size = showSub ? 14 : 18; g.font = font(700, size); const w = g.measureText(txt2).width; if (w > maxW) { size = Math.max(13, Math.floor(size * maxW / w)); g.font = font(700, size); }
       const warn = b.color === '#ff5d73' || b.color === '#ff8fa0';
       txtNeon(g, txt2, 0, 0, size, 'center', showSub ? theme.ink2 : warn ? theme.red : theme.ink, null, 700);
       g.restore();
@@ -2437,44 +2437,44 @@ function capsuleBar(g, x, y, w, h, k, col, fromRight) {
   g.fillStyle = theme.fill; rrect(g, x, y, w, h, h / 2); g.fill();
   if (k > 0.002) { const fw = Math.max(h, w * k); g.fillStyle = col; rrect(g, fromRight ? x + w - fw : x, y, fw, h, h / 2); g.fill(); }
 }
+function chaosLabel(run) {
+  const lvl = run.chaosLvl, nm = T.CHAOS_LEVELS[lvl].name;
+  return run.frenzy > 0 ? 'Frenzy \u00D72' : '\u00D7' + run.chaosMult + (nm ? ' ' + nm.charAt(0) + nm.slice(1).toLowerCase() : '');
+}
+// Three compact rows: room / score / coins, the target bar, then progress, chaos meter and hits.
 function drawHUD(g, run, t) {
   const top = L.hudTop, left = SAVE.settings.hand === 'left';
   const x0 = L.colX + 16, x1 = L.colX + L.colW - 16, cx = (x0 + x1) / 2;
-  // room title and its kind, on the side away from the pause button
   const ax = left ? x1 : x0, al = left ? 'right' : 'left';
-  txtNeon(g, 'Room ' + run.roomIdx, ax, top + 16, 17, al, theme.ink, null, 700);
+  txtNeon(g, 'Room ' + run.roomIdx, ax, top + 15, 16, al, theme.ink, null, 700);
   let tag = 'Standard', tagCol = theme.ink2;
   if (run.boss) { tag = BOSSES[run.boss.kind].name; tagCol = theme.red; } else if (run.path && run.path !== 'normal') { tag = PATHS[run.path].name; tagCol = theme.blue; } else if (run.mut) { tag = MUTATORS[run.mut].name; tagCol = theme.purple; }
-  txtNeon(g, tag, ax, top + 36, 13, al, tagCol, null, 600);
-  // coins, beside the pause button
-  g.font = font(600, 16); const cw = g.measureText(String(run.coins)).width, pw = cw + 34, px = left ? x0 + 52 : x1 - 52 - pw;
-  g.fillStyle = theme.fill; rrect(g, px, top + 10, pw, 28, 14); g.fill();
-  g.fillStyle = theme.yellow; circle(g, px + 14, top + 24, 6.5); g.strokeStyle = 'rgba(0,0,0,.15)'; g.lineWidth = 1; g.beginPath(); g.arc(px + 14, top + 24, 6.5, 0, TAU); g.stroke();
-  txtNeon(g, String(run.coins), px + 25, top + 24.5, 16, 'left', theme.ink, null, 600);
-  // score
-  txtNeon(g, fmt(run.score), cx, top + 25, 34, 'center', theme.ink, null, 700);
+  txtNeon(g, tag, ax, top + 33, 12, al, tagCol, null, 600);
+  g.font = font(600, 15); const cw = g.measureText(String(run.coins)).width, pw = cw + 32, px = left ? x0 + 50 : x1 - 50 - pw;
+  g.fillStyle = theme.fill; rrect(g, px, top + 11, pw, 26, 13); g.fill();
+  g.fillStyle = theme.yellow; circle(g, px + 13, top + 24, 6); g.strokeStyle = 'rgba(0,0,0,.15)'; g.lineWidth = 1; g.beginPath(); g.arc(px + 13, top + 24, 6, 0, TAU); g.stroke();
+  txtNeon(g, String(run.coins), px + 23, top + 24.5, 15, 'left', theme.ink, null, 600);
+  txtNeon(g, fmt(run.score), cx, top + 24, 30, 'center', theme.ink, null, 700);
   const best = App.bestForMode;
-  if (best > 0 && run.score > best && run.phase !== 'over') { g.font = font(700, 34); const sw = g.measureText(fmt(run.score)).width; g.fillStyle = theme.blue; rrect(g, cx - 22, top + 46, 44, 16, 8); g.fill(); txtNeon(g, 'BEST', cx, top + 54.5, 11, 'center', '#ffffff', null, 700); }
-  // target progress, with the numbers underneath
-  const by2 = top + 68, prog = clamp(run.roomScore / run.target, 0, 1), bw2 = x1 - x0;
-  if (run.boss && !run.cleared) capsuleBar(g, x0, by2, bw2, 6, 1 - prog, theme.red, true);
-  else capsuleBar(g, x0, by2, bw2, 6, prog, run.cleared ? theme.green : theme.blue);
-  if (App.ghost && App.ghostVisible) { const gr = App.ghost.run; if (gr.roomIdx === run.roomIdx) { const gx = x0 + bw2 * clamp(gr.roomScore / gr.target, 0, 1); g.fillStyle = theme.ink2; g.fillRect(gx - 1, by2 - 3, 2, 12); } }
-  const barText = run.boss ? (run.cleared ? 'Defeated' : 'HP ' + fmt(Math.max(0, run.target - run.roomScore))) : run.cleared ? 'Target met \u00B7 ' + fmt(run.roomScore) : fmt(run.roomScore) + ' of ' + fmt(run.target);
-  txtNeon(g, barText, cx, by2 + 20, 13, 'center', run.cleared ? theme.green : theme.ink2, null, 600);
+  if (best > 0 && run.score > best && run.phase !== 'over') { g.font = font(700, 30); const sw = g.measureText(fmt(run.score)).width; g.fillStyle = theme.blue; rrect(g, cx + sw / 2 + 6, top + 17, 38, 15, 7.5); g.fill(); txtNeon(g, 'BEST', cx + sw / 2 + 25, top + 25, 10, 'center', '#ffffff', null, 700); }
+  const by2 = top + 50, prog = clamp(run.roomScore / run.target, 0, 1), bw2 = x1 - x0;
+  if (run.boss && !run.cleared) capsuleBar(g, x0, by2, bw2, 5, 1 - prog, theme.red, true);
+  else capsuleBar(g, x0, by2, bw2, 5, prog, run.cleared ? theme.green : theme.blue);
+  if (App.ghost && App.ghostVisible) { const gr = App.ghost.run; if (gr.roomIdx === run.roomIdx) { const gx = x0 + bw2 * clamp(gr.roomScore / gr.target, 0, 1); g.fillStyle = theme.ink2; g.fillRect(gx - 1, by2 - 3, 2, 11); } }
+  const ry = top + 68;
+  const barText = run.boss ? (run.cleared ? 'Defeated' : 'HP ' + fmt(Math.max(0, run.target - run.roomScore))) : run.cleared ? '\u2713 ' + fmt(run.roomScore) : fmt(run.roomScore) + ' / ' + fmt(run.target);
+  txtNeon(g, barText, x0, ry, 13, 'left', run.cleared ? theme.green : theme.ink2, null, 600);
   if (App.ghost && App.state === 'play') {
     const gr = App.ghost.run, tagG = App.rival ? App.rival.n : 'Ghost', kk = v => v >= 10000 ? Math.round(v / 1000) + 'k' : fmt(v);
-    txtNeon(g, tagG + ' ' + kk(gr.score), left ? x0 : x1, by2 + 20, 12, left ? 'left' : 'right', theme.ink2, null, 600);
+    txtNeon(g, tagG + ' ' + kk(gr.score), cx, by2 - 8, 11, 'center', theme.ink2, null, 600);
   }
-  // chaos: multiplier, a segmented capsule meter, and the hit count (drawn by drawComboCounter)
-  const cy = top + 110, lvl = run.chaosLvl, col = run.frenzy > 0 ? theme.purple : CHAOS_COL[lvl];
-  const lab = run.frenzy > 0 ? 'Frenzy \u00D72' : '\u00D7' + run.chaosMult + (T.CHAOS_LEVELS[lvl].name ? ' ' + T.CHAOS_LEVELS[lvl].name.charAt(0) + T.CHAOS_LEVELS[lvl].name.slice(1).toLowerCase() : '');
-  txtNeon(g, lab, x0, cy, 15, 'left', lvl || run.frenzy > 0 ? col : theme.ink2, null, 700);
-  const mx0 = x0 + 104, mw = x1 - mx0 - 74, segs = 7, gap = 3, sgw = (mw - gap * (segs - 1)) / segs, fill = clamp(run.chaos / T.CHAOS_MAX, 0, 1) * segs;
+  // chaos meter in the middle of the row; its label and the hit count sit on the right (drawComboCounter)
+  const lvl = run.chaosLvl, col = run.frenzy > 0 ? theme.purple : CHAOS_COL[lvl];
+  const segs = 7, gap = 2, mw = Math.min(96, bw2 * 0.28), mx0 = cx - mw / 2 - 8, sgw = (mw - gap * (segs - 1)) / segs, fill = clamp(run.chaos / T.CHAOS_MAX, 0, 1) * segs;
   for (let i = 0; i < segs; i++) {
     const sx = mx0 + i * (sgw + gap), k = clamp(fill - i, 0, 1);
-    g.fillStyle = theme.fill; rrect(g, sx, cy - 3, sgw, 6, 3); g.fill();
-    if (k > 0) { g.fillStyle = col; rrect(g, sx, cy - 3, Math.max(6, sgw * k), 6, 3); g.fill(); }
+    g.fillStyle = theme.fill; rrect(g, sx, ry - 2.5, sgw, 5, 2.5); g.fill();
+    if (k > 0) { g.fillStyle = col; rrect(g, sx, ry - 2.5, Math.max(5, sgw * k), 5, 2.5); g.fill(); }
   }
 }
 // Tray under the board: your bag, the hand drawn from it (tap one to throw it next),
@@ -2483,7 +2483,7 @@ const TRAY_BAG_W = 72;
 function trayLayout(run) {
   const x0 = L.colX + TRAY_BAG_W, x1 = L.colX + L.colW - 8, sp = 50;
   const maxShow = Math.max(1, Math.min(7, Math.floor((x1 - x0) / 52))), shown = Math.min(run.hand.length, maxShow);
-  return { maxShow, shown, sp: 52, y: L.trayY + 38, startX: (x0 + x1) / 2 - (shown - 1) * 52 / 2, bagX: L.colX + 36 };
+  return { maxShow, shown, sp: 52, y: L.trayY + 30, startX: (x0 + x1) / 2 - (shown - 1) * 52 / 2, bagX: L.colX + 36 };
 }
 function traySlotAt(run, px, py) {
   const tl = trayLayout(run);
@@ -2510,7 +2510,7 @@ function drawBagIcon(g, x, y, count) {
 function drawTray(g, run, t) {
   const y0 = L.trayY, cx = L.colX + L.colW / 2, n = run.hand.length;
   const showBank = !UI.bankHidden, tl = trayLayout(run);
-  panel(g, L.colX + 8, tl.y - 30, L.colW - 16, 60, 18);
+  panel(g, L.colX + 8, tl.y - 28, L.colW - 16, 56, 18);
   drawBagIcon(g, tl.bagX, tl.y, run.bag.length);
   g.fillStyle = theme.frame; g.fillRect(L.colX + TRAY_BAG_W - 4, tl.y - 18, 1, 36);
   const dealT = run.roomTick * T.STEP, dealing = run.throws === 0 && dealT < 1.4;
@@ -2543,22 +2543,21 @@ function drawTray(g, run, t) {
   }
   if (showBank) return;
   // one quiet line: how the hand was drawn, or what the next marble is
-  const lineY = y0 + 84;
+  const lineY = y0 + 76, kk = run.kicks, kickW = 44;
   let segs;
   if (run.throws === 0 && dealT < 3) segs = [[run.handSize < run.bag.length ? 'Drew ' + run.handSize + ' of ' + run.bag.length + ' marbles at random' : 'Your whole bag this room', theme.ink2]];
   else if (n > 1 && run.throws === 0 && dealT < 7) segs = [['Drag a marble to the first spot to throw it next', theme.ink2]];
   else if (n > 0) { const m = run.hand[0], z = sizeOf(m).name; segs = [['Next  ', theme.ink2], [(z ? z + ' ' : '') + MATS[m.mat].name + (m.lvl > 1 ? ' Lv ' + m.lvl : ''), theme.ink], ['  \u00B7  ', theme.ink2], [m.eng.length ? m.eng.map(e => ENGS[e].name).join(' + ') : 'No upgrades', m.eng.length ? theme.blue : theme.ink2]]; }
+  if (!segs) segs = [['Tap to kick', theme.ink2]];
   if (segs) {
     g.font = font(600, 15); let tw = 0; for (const [s2] of segs) tw += g.measureText(s2).width;
-    const sc = Math.min(1, (L.colW - 32) / tw);
-    g.font = font(600, Math.floor(15 * sc)); let px = cx - tw * sc / 2; g.textAlign = 'left'; g.textBaseline = 'middle';
+    const sc = Math.min(1, (L.colW - 40 - kickW) / tw);
+    g.font = font(600, Math.floor(15 * sc)); let px = cx - (tw * sc + kickW) / 2; g.textAlign = 'left'; g.textBaseline = 'middle';
     for (const [s2, c2] of segs) { g.fillStyle = c2; g.fillText(s2, px, lineY); px += g.measureText(s2).width; }
+    // kicks left (a quick tap kicks): two pips at the end of the line
+    const kx = px + 18; g.fillStyle = theme.frame; g.fillRect(kx - 10, lineY - 8, 1, 16);
+    for (let i = 0; i < 2; i++) { g.fillStyle = i < kk ? theme.blue : theme.fill; circle(g, kx + 4 + i * 13, lineY, 4.5); }
   }
-  // kicks
-  const ky = y0 + 112, kk = run.kicks;
-  g.font = font(600, 15); const label = 'Tap to kick', lw = g.measureText(label).width, tot = lw + 12 + Math.max(1, kk) * 14; let x = cx - tot / 2;
-  txtNeon(g, label, x, ky, 15, 'left', kk > 0 ? theme.ink : theme.ink2, null, 600); x += lw + 12;
-  for (let i = 0; i < 2; i++) { g.fillStyle = i < kk ? theme.blue : theme.fill; circle(g, x + i * 14 + 4, ky, 4.5); }
 }
 function drawTutorial(g, run, t) {
   if (run.phase !== 'play') return;
@@ -2582,7 +2581,7 @@ function drawTutorial(g, run, t) {
   }
   // second wordless hint: tap to kick, once marbles are rolling in the first run
   if (!SAVE.tutorialDone && run.roomIdx === 1 && run.throws >= 1 && run.kicks > 0 && run.anyMoving() && run.firstThrow >= 0 && (run.roomTick - run.firstThrow) * T.STEP > 1.2 && (run.roomTick - run.firstThrow) * T.STEP < 5.5) {
-    const sx = L.colX + L.colW / 2, sy = L.trayY + 40, k = (t * 1.6) % 1;
+    const sx = L.colX + L.colW / 2, sy = L.trayY + 30, k = (t * 1.6) % 1;
     g.save(); g.globalAlpha = 1;
     g.strokeStyle = theme.blue; g.lineWidth = 3; g.globalAlpha *= 1 - k; g.beginPath(); g.arc(sx, sy, 14 + k * 26, 0, TAU); g.stroke();
     g.globalAlpha = 1; g.fillStyle = rgba(theme.blue, 0.85); circle(g, sx, sy, 12);
@@ -2612,8 +2611,12 @@ function drawComboCounter(g, run, dtF) {
   if (run.phase !== 'play') { App.lastChain = 0; return; }
   if (run.chain !== App.lastChain) { if (run.chain > App.lastChain) App.chainPulse = 1; App.lastChain = run.chain; }
   App.chainPulse = Math.max(0, (App.chainPulse || 0) - dtF * 5);
-  const x1 = L.colX + L.colW - 16, y = L.hudTop + 110, size = Math.round(15 + App.chainPulse * 2);
-  txtNeon(g, run.chain + (run.chain === 1 ? ' hit' : ' hits'), x1, y, size, 'right', run.chain ? theme.ink : theme.ink2, null, 600);
+  const x1 = L.colX + L.colW - 16, y = L.hudTop + 68, size = Math.round(13 + App.chainPulse * 2);
+  const hits = run.chain + (run.chain === 1 ? ' hit' : ' hits'), lab = chaosLabel(run) + '  \u00B7  ';
+  g.font = font(600, size); const hw = g.measureText(hits).width;
+  txtNeon(g, hits, x1, y, size, 'right', run.chain ? theme.ink : theme.ink2, null, 600);
+  const lvl = run.chaosLvl;
+  txtNeon(g, lab, x1 - hw, y, 13, 'right', run.frenzy > 0 ? theme.purple : lvl ? CHAOS_COL[lvl] : theme.ink2, null, 700);
 }
 function drawFog(g, run, alpha) {
   if (!LightTrail.pts.length) LightTrail.init();
@@ -2809,8 +2812,8 @@ const UI = {
     const left = SAVE.settings.hand === 'left';
     this.pauseBtn.style.left = left ? (L.colX + 8) + 'px' : 'auto';
     this.pauseBtn.style.right = left ? 'auto' : (L.vw - L.colX - L.colW + 8) + 'px';
-    this.bankBtn.style.top = (L.trayY + 76) + 'px';
-    this.ffBtn.style.top = (L.trayY + 76) + 'px';
+    this.bankBtn.style.top = (L.trayY + 54) + 'px';
+    this.ffBtn.style.top = (L.trayY + 54) + 'px';
     this.toasts.style.top = (L.sat + 6) + 'px';
   },
   frame() {
