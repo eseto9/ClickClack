@@ -343,7 +343,7 @@ canvas.demo{display:block;width:calc(100% - 28px);height:150px;margin:0 14px 12p
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 14;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 15;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -553,6 +553,17 @@ const COMBOS = [
   { id: 'magstorm',  name: 'MAGNETIC STORM', a: 'magnet',    b: 'spark',   bonus: 130, fx: ['pull', 'bolt'], r: 160, n: 3, desc: 'Pulls marbles in, then zaps 3 of them.' },
   { id: 'orbit',     name: 'ORBIT',          a: 'magnet',    b: 'pinball', bonus: 120, fx: ['pull', 'speed'], r: 150, k: 1.3, desc: 'Pulls marbles in and speeds the pair up.' },
 ];
+// Gadgets: bought in the shop (or offered as a free pick), kept until used, placed on the board yourself for one room.
+const GADGETS = {
+  bumper: { name: 'Pocket Bumper', desc: 'Place a bumper anywhere.', cost: 6, r: 20 },
+  tesla:  { name: 'Tesla Coil', desc: 'Place a coil that zaps nearby marbles when hit.', cost: 9, r: 13 },
+  vortex: { name: 'Vortex', desc: 'Place a swirl that spins marbles for points.', cost: 8, r: 22 },
+  gate:   { name: '\u00D73 Gate', desc: 'Place a gate: marbles through it score \u00D73 for a moment.', cost: 9, r: 30 },
+  portal: { name: 'Portal Pair', desc: 'Place a portal; its twin opens across the board.', cost: 10, r: 14 },
+  kicker: { name: 'Slingshot', desc: 'Place a bar that fires marbles off it.', cost: 7, r: 24 },
+  stars:  { name: 'Star Cluster', desc: 'Place 3 stars to collect.', cost: 6, r: 22 },
+};
+const MAX_GADGETS = 3;
 const comboPartners = e => COMBOS.filter(c => c.a === e || c.b === e).map(c => ({ c, p: c.a === e ? c.b : c.a }));
 // Pick-your-path: after each room you choose what kind of room comes next.
 const PATHS = {
@@ -891,7 +902,7 @@ class Run {
     this.record = { v: GAME_VERSION, cfg, actions: [] };
     this.rng = RNG(hash32('run|' + cfg.seed));
     this.tick = 0; this.score = 0; this.coins = cfg.coins || 0;
-    this.bagId = 1; this.bodyId = 1; this.charms = []; this.bag = [];
+    this.bagId = 1; this.bodyId = 1; this.charms = []; this.bag = []; this.gadgets = [];
     const lo = LOADOUTS[cfg.loadout] || LOADOUTS.classic;
     for (const [mat, eng, n, sz] of lo.bag) for (let i = 0; i < n; i++) this.bag.push(this.newMarble(mat, eng.slice(), 1, sz));
     if (this.bag[0] && !this.bag[0].eng.length) { const ce = cfg.pool.engs.filter(e => (RAR[e] || 'c') === 'c'); if (ce.length) this.bag[0].eng.push(this.rng.pick(ce)); }   // one engraved marble to start building combos from
@@ -916,7 +927,7 @@ class Run {
     let v = 0;
     for (const b of this.bumpers) if (!b.warden) v += 10;
     for (const k of this.blocks) if (!k.spin) v += 8 * k.hp + 25 + 10 * k.maxHp;
-    v += this.stars.length * 40 + (this.stars.length ? 300 : 0) + this.multis.length * 50 + this.gates.length * 10 + this.pads.length * 10;
+    v += this.stars.length * 40 + (this.stars.length ? 300 : 0) + this.multis.length * 50 + this.gates.length * 10 + this.pads.length * 10 + this.kickers.length * 12 + this.portals.length * 8;
     return v;
   }
   startRoom(n, path) {
@@ -942,7 +953,7 @@ class Run {
   buildRoom(n) {
     const rr = this.rr, W = T.W, H = T.H, hard = !!this.cfg.hard;
     this.bumpers = []; this.blocks = []; this.holes = []; this.spikes = []; this.gates = [];
-    this.pads = []; this.vortexes = []; this.multis = []; this.stars = []; this.starsGot = 0; this.frenzy = 0; this.frenzyUsed = false; this.pendingMulti = [];
+    this.pads = []; this.vortexes = []; this.multis = []; this.stars = []; this.portals = []; this.kickers = []; this.starsGot = 0; this.frenzy = 0; this.frenzyUsed = false; this.pendingMulti = [];
     this.boss = null; this.jugg = null; this.orb = null; this.orbPlan = null; this.mut = null;
     const isBoss = n % T.BOSS_EVERY === 0, late = n > 10;
     if (!isBoss && ((n >= 3 && rr.chance(hard ? 0.6 : 0.42)) || late || this.path === 'wild')) this.mut = rr.pick(Object.keys(MUTATORS));
@@ -1024,6 +1035,14 @@ class Run {
     fill(ns, 20, (x, y) => this.spikes.push({ x, y, r: 13, id: 's' + this.spikes.length }));
     const ng = n >= 2 && rr.chance(0.65) ? (rr.chance(0.35) ? 2 : 1) : 0;
     fill(ng, 36, addGate, gateAngle);
+    // feature pieces: each room gets one (two from room 6) of portals, slingshots, tesla coils or a spinner
+    const feats = n >= 2 ? rr.shuffle(['portal', 'kicker', 'tesla', 'spinner']).slice(0, n >= 6 ? 2 : 1) : [];
+    for (const ft of feats) {
+      if (ft === 'kicker') fill(2, 30, (x, y) => { const a = Math.atan2(cy - y, cx - x) + Math.PI / 2 + rr.pick([-0.4, 0, 0.4]); this.kickers.push({ x, y, w: 46, h: 9, a, c: Math.cos(a), s: Math.sin(a), flash: 0, id: 'kk' + this.kickers.length }); });
+      else if (ft === 'tesla') fill(n >= 6 ? 2 : 1, 24, (x, y) => this.bumpers.push({ x, y, r: 13, flash: 0, id: 'tc' + this.bumpers.length, tesla: true }));
+      else if (ft === 'spinner') fill(1, 46, (x, y) => this.blocks.push({ x, y, w: 78, h: 10, a: 0, c: 1, s: 0, hp: 1, maxHp: 1, flash: 0, dead: false, id: 'sn' + this.blocks.length, spin: true, rot: true, w0: rr.pick([-1.6, 1.6]) }));
+      else if (ft === 'portal') { const ps = []; fill(2, 24, (x, y) => ps.push({ x, y })); if (ps.length >= 2) this.addPortals(ps[0].x, ps[0].y, ps[1].x, ps[1].y); }
+    }
     // arcade pieces: boost pads, vortexes, multiball orbs and collectible stars
     // boost pads always point diagonally toward the middle of the board, so they can't pin a marble against a wall
     const addPad = (x, y) => { const a = Math.atan2(cy - y, cx - x) + rr.pick([-0.55, -0.35, 0.35, 0.55]); this.pads.push({ x, y, w: 46, h: 26, a, c: Math.cos(a), s: Math.sin(a), id: 'pad' + this.pads.length }); };
@@ -1034,6 +1053,26 @@ class Run {
     if (rr.chance(this.mut === 'goldfever' ? 1 : T.ORB_CHANCE)) {
       for (let i = 0; i < 40; i++) { const x = rr.range(40, W - 40), y = rr.range(40, H - 40); if (free(x, y, 14)) { this.orbPlan = { at: rr.range(4, 8), x, y }; break; } }
     }
+  }
+
+  addPortals(x1, y1, x2, y2) {
+    const i = this.portals.length;
+    this.portals.push({ x: x1, y: y1, r: 14, id: 'pt' + i, to: i + 1, col: 0 }, { x: x2, y: y2, r: 14, id: 'pt' + (i + 1), to: i, col: 1 });
+  }
+  // Put a gadget from your inventory on the board (nudged to the nearest clear spot).
+  placeGadget(i, xq, yq) {
+    if (this.phase !== 'play' || !(i >= 0 && i < this.gadgets.length)) return false;
+    const kind = this.gadgets[i], G = GADGETS[kind], p = this.safeSpot(xq / 10, yq / 10, G.r), x = p.x, y = p.y, cx = T.W / 2, cy = T.H / 2, tag = 'g' + this.roomTick + '_';
+    const face = Math.atan2(cy - y, cx - x) + Math.PI / 2;
+    if (kind === 'bumper') this.bumpers.push({ x, y, r: 20, flash: 1, id: tag + 'b' + this.bumpers.length, placed: true });
+    else if (kind === 'tesla') this.bumpers.push({ x, y, r: 13, flash: 1, id: tag + 't' + this.bumpers.length, tesla: true });
+    else if (kind === 'vortex') this.vortexes.push({ x, y, r: 62, id: tag + 'v' + this.vortexes.length });
+    else if (kind === 'gate') this.gates.push({ x, y, w: 64, h: 10, a: face, c: Math.cos(face), s: Math.sin(face), mult: 3 });
+    else if (kind === 'kicker') this.kickers.push({ x, y, w: 46, h: 9, a: face, c: Math.cos(face), s: Math.sin(face), flash: 1, id: tag + 'k' + this.kickers.length });
+    else if (kind === 'portal') { const q = this.safeSpot(T.W - x, T.H - y, 14); this.addPortals(x, y, q.x, q.y); }
+    else if (kind === 'stars') for (let k = 0; k < 3; k++) { const a = k * TAU / 3 - Math.PI / 2, q = this.safeSpot(x + Math.cos(a) * 24, y + Math.sin(a) * 24, 10); this.stars.push({ x: q.x, y: q.y, r: 10, got: false }); }
+    this.gadgets.splice(i, 1); this.stats.gadgets = (this.stats.gadgets || 0) + 1;
+    this.emit('placed', { x, y, kind }); return true;
   }
 
   /* ---------------------------- actions ---------------------------- */
@@ -1053,6 +1092,7 @@ class Run {
         this.hand.unshift(this.hand.splice(a.i, 1)[0]); return true;
       }
       case 'bank': if (!this.canBank()) return false; this.endRoom(true); return true;
+      case 'place': return this.placeGadget(a.i, a.x, a.y);
       case 'settle': if (this.phase !== 'play' || !this.cleared) return false; this.forceSettle = true; return true;
       case 'card': return this.pickCard(a.i);
       case 'skip': if (this.phase !== 'reward') return false; this.coins += 3; this.phase = 'next'; return true;
@@ -1080,9 +1120,10 @@ class Run {
       for (const mb of this.multis) if (!mb.got) push(mb.x, mb.y, mb.r + r + 2);
       for (const st of this.stars) if (!st.got) push(st.x, st.y, st.r + r + 2);
       for (const bp of this.bumpers) push(bp.x, bp.y, bp.r + r + 1);
+      for (const pt of this.portals) push(pt.x, pt.y, pt.r + r + 2);
       for (const m of this.marbles) if (m.alive) push(m.x, m.y, m.r + r + 0.5);
       if (this.jugg) push(this.jugg.x, this.jugg.y, this.jugg.r + r + 2);
-      for (const k of this.blocks) {
+      for (const k of this.blocks.concat(this.kickers)) {
         if (k.dead) continue;
         const hw = k.w / 2 + r + 1, hh = k.h / 2 + r + 1, c = k.c === undefined ? 1 : k.c, sn = k.s || 0;
         let lx = (x - k.x) * c + (y - k.y) * sn, ly = -(x - k.x) * sn + (y - k.y) * c;
@@ -1151,6 +1192,7 @@ class Run {
     this.tick++; this.roomTick++; this.stats.playTicks++;
     if (this.cooldown > 0) this.cooldown -= dt;
     this.bossUpdate(dt);
+    for (const k of this.blocks) if (k.rot && !k.dead) { k.a += k.w0 * dt; k.c = Math.cos(k.a); k.s = Math.sin(k.a); }   // spinners
     this.physics(dt);
     this.processPending();
     for (let i = this.echoes.length - 1; i >= 0; i--) {
@@ -1210,7 +1252,7 @@ class Run {
       if (!b.alive) continue;
       b.px = b.x; b.py = b.y;
       if (b.frozen > 0) { b.frozen -= dt; b.vx = 0; b.vy = 0; if (b.frozen < 0) b.frozen = 0; continue; }
-      if (b.sparkCd > 0) b.sparkCd -= dt; if (b.echoCd > 0) b.echoCd -= dt; if (b.gateCd > 0) b.gateCd -= dt;
+      if (b.sparkCd > 0) b.sparkCd -= dt; if (b.echoCd > 0) b.echoCd -= dt; if (b.gateCd > 0) b.gateCd -= dt; if (b.portCd > 0) b.portCd -= dt;
       if (b.charged > 0) b.charged -= dt; if (b.wallCd > 0) b.wallCd -= dt;
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
       if (sp > 0) {
@@ -1239,6 +1281,14 @@ class Run {
         if (k.spin && imp >= 0) { const rx = b.x - k.x, ry = b.y - k.y; b.vx += -ry * k.w0 * 0.8; b.vy += rx * k.w0 * 0.8; }
         if (imp > T.HIT_MIN) this.onBlock(b, k, imp);
       }
+      for (const k of this.kickers) {   // slingshot: a bar that fires marbles off its face
+        const imp = this.hitBox(b, k, 1);
+        if (imp > T.HIT_MIN && this.cdOk(b, k.id, 0.25)) {
+          const ly = -(b.x - k.x) * k.s + (b.y - k.y) * k.c, sg = ly >= 0 ? 1 : -1, nx = -k.s * sg, ny = k.c * sg, f = 280 * Math.max(0.2, 1 - b.bumps * 0.07);
+          b.vx += nx * f; b.vy += ny * f; b.bumps++; const sp3 = Math.hypot(b.vx, b.vy); if (sp3 > T.SPEED_CAP) { b.vx *= T.SPEED_CAP / sp3; b.vy *= T.SPEED_CAP / sp3; }
+          k.flash = 1; this.award(12 * this.valOf(b), b.x, b.y, 'bumpers', b, null); this.emit('kicker', { x: b.x, y: b.y });
+        }
+      }
       if (this.jugg) this.juggHit(b);
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
       for (const s of this.spikes) {
@@ -1260,6 +1310,17 @@ class Run {
         if (Math.abs(glx) < g.w / 2 && Math.abs(gly) < g.h / 2 + b.r) {
           b.gateCd = 0.8; b.charged = 3; b.chargeMult = g.mult || 2; this.award(5, b.x, b.y, 'bonus', b, null, { noChaos: true }); this.emit('gate', { x: g.x, y: g.y, mult: g.mult || 2 });
         }
+      }
+      if (!(b.portCd > 0)) for (const pt of this.portals) {   // portal: in one, out the other at the same speed
+        const dx = b.x - pt.x, dy = b.y - pt.y;
+        if (dx * dx + dy * dy > pt.r * pt.r * 0.64) continue;
+        const q = this.portals[pt.to]; if (!q) break;
+        const sp2 = Math.hypot(b.vx, b.vy), ux = sp2 > 1 ? b.vx / sp2 : 0, uy = sp2 > 1 ? b.vy / sp2 : -1;
+        const o = this.safeSpot(q.x + ux * (q.r + b.r + 3), q.y + uy * (q.r + b.r + 3), b.r);
+        b.portCd = 0.6; this.emit('portal', { x1: pt.x, y1: pt.y, x2: q.x, y2: q.y });
+        b.x = b.px = o.x; b.y = b.py = o.y; b.moved = true;
+        this.award(15 * this.valOf(b), q.x, q.y, 'bonus', b, null);
+        break;
       }
       for (const pd of this.pads) {   // boost pad: launches the marble along its arrows
         const dx = b.x - pd.x, dy = b.y - pd.y, lx = dx * pd.c + dy * pd.s, ly = -dx * pd.s + dy * pd.c;
@@ -1394,9 +1455,23 @@ class Run {
     bp.flash = 1; b.bumps++;   // bumper-only ping-pong loses its kick (no infinite loops)
     if (b.eng.indexOf('pinball') >= 0 && b.pin < 10) b.pin++;
     if (bp.warden) { this.award(25 * this.valOf(b), b.x, b.y, 'bumpers', b, null); this.damageWarden(bp, b.m >= 2 ? 2 : 1); return; }
-    if (!bp.seed && !bp.lit) {
+    if (bp.tesla) {   // tesla coil: zaps the nearest marbles (once a second)
+      this.award(10 * this.valOf(b), b.x, b.y, 'bumpers', b, null); this.emit('bumper', { x: bp.x, y: bp.y });
+      if (this.roomTick - (bp.zapT === undefined ? -1e9 : bp.zapT) >= 1 / T.STEP) {
+        bp.zapT = this.roomTick;
+        const near = this.marbles.filter(m => m.alive && m !== b && (m.x - bp.x) * (m.x - bp.x) + (m.y - bp.y) * (m.y - bp.y) < 200 * 200)
+          .sort((p, q) => ((p.x - bp.x) * (p.x - bp.x) + (p.y - bp.y) * (p.y - bp.y)) - ((q.x - bp.x) * (q.x - bp.x) + (q.y - bp.y) * (q.y - bp.y)) || p.id - q.id).slice(0, 3);
+        for (const m of near) {
+          this.award(14 * this.valOf(m), m.x, m.y, 'hits', b, m);
+          if (m.frozen <= 0) { const d = Math.hypot(m.x - bp.x, m.y - bp.y) || 1; m.vx += (m.x - bp.x) / d * 110; m.vy += (m.y - bp.y) / d * 110; m.moved = true; }
+          this.emit('spark', { x1: bp.x, y1: bp.y, x2: m.x, y2: m.y });
+        }
+      }
+      return;
+    }
+    if (!bp.seed && !bp.placed && !bp.lit) {
       bp.lit = true;
-      const all = this.bumpers.filter(x => !x.seed && !x.warden);
+      const all = this.bumpers.filter(x => !x.seed && !x.warden && !x.tesla && !x.placed);
       if (!this.frenzyUsed && all.length >= 3 && all.every(x => x.lit)) {
         this.frenzyUsed = true;
         for (const x of all) x.lit = false;
@@ -1786,7 +1861,7 @@ class Run {
   genCards(boost) {
     boost = boost || 0;
     const rng = this.rng, pool = this.cfg.pool, cards = [], used = {};
-    const kinds = [['engrave', 34], ['newMarble', 28], ['polish', 14], ['reforge', 12], ['charm', 12]];
+    const kinds = [['engrave', 34], ['newMarble', 28], ['polish', 14], ['reforge', 12], ['charm', 12], ['gadget', 10]];
     const ofR = (list, r) => { const f = list.filter(k => (RAR[k] || 'c') === r); return f.length ? f : null; };
     for (let guard = 0; cards.length < 3 && guard < 120; guard++) {
       const kind = weighted(rng, kinds), r = this.rollRarity(boost); let c = null;
@@ -1797,6 +1872,7 @@ class Run {
         if (r === 'l') c = { kind: 'polishAll', rarity: 'l', key: 'pa' };
         else if (this.bag.some(m => m.lvl < T.MAX_LVL)) c = { kind, rarity: r, amount: r === 'r' ? 2 : 1, key: 'p' + r };
       }
+      else if (kind === 'gadget') { if (this.gadgets.length < MAX_GADGETS) { const gk = rng.pick(Object.keys(GADGETS)); c = { kind, g: gk, rarity: 'c', key: 'g' + gk }; } }
       else if (kind === 'charm') {
         const avail = pool.charms.filter(x => this.charms.indexOf(x) < 0 && (RAR[x] || 'c') === r);
         if (avail.length && this.charms.length < T.CHARM_SLOTS) { const ch = rng.pick(avail); c = { kind, charm: ch, rarity: r, key: 'c' + ch }; }
@@ -1810,6 +1886,7 @@ class Run {
     const c = this.offer[i];
     if (c.kind === 'newMarble') { this.bag.push(this.newMarble(c.mat, c.eng.slice(), 1, c.sz)); this.phase = 'next'; }
     else if (c.kind === 'charm') { this.charms.push(c.charm); this.phase = 'next'; }
+    else if (c.kind === 'gadget') { if (this.gadgets.length < MAX_GADGETS) this.gadgets.push(c.g); this.phase = 'next'; }
     else if (c.kind === 'polishAll') { for (const m of this.bag) if (m.lvl < T.MAX_LVL) m.lvl++; this.phase = 'next'; }
     else { this.pending = { from: 'reward', card: c }; this.phase = 'pick'; }
     return true;
@@ -1847,6 +1924,7 @@ class Run {
     }
     const r = this.rollRarity(0), avail = pool.charms.filter(x => this.charms.indexOf(x) < 0);
     if (avail.length) { const ch = rng.pick(ofR(avail, r)); items.push({ kind: 'charm', charm: ch, rarity: RAR[ch] || 'c', cost: ({ c: 16, r: 21, l: 28 })[RAR[ch] || 'c'] + rng.int(0, 3) }); }
+    if (this.gadgets.length < MAX_GADGETS) { const gk = rng.pick(Object.keys(GADGETS)); items.push({ kind: 'gadget', g: gk, cost: GADGETS[gk].cost + rng.int(0, 2) }); }
     items.push({ kind: 'polish', cost: 9 }, { kind: 'remove', cost: 6 });
     this.shop.items = items;
   }
@@ -1854,6 +1932,7 @@ class Run {
     if (!it || it.sold || this.coins < it.cost) return false;
     if (it.kind === 'charm' && this.charms.length >= T.CHARM_SLOTS) return false;
     if (it.kind === 'remove' && this.bag.length <= 3) return false;
+    if (it.kind === 'gadget' && this.gadgets.length >= MAX_GADGETS) return false;
     if (it.kind === 'polish' && !this.bag.some(m => m.lvl < T.MAX_LVL)) return false;
     return true;
   }
@@ -1863,6 +1942,7 @@ class Run {
     this.coins -= it.cost; it.sold = true;
     if (it.kind === 'marble') this.bag.push(this.newMarble(it.mat, it.eng.slice(), 1, it.sz));
     else if (it.kind === 'charm') this.charms.push(it.charm);
+    else if (it.kind === 'gadget') this.gadgets.push(it.g);
     else { this.pending = { from: 'shop', card: { kind: it.kind }, cost: it.cost, slot: i }; this.phase = 'pick'; }
     return true;
   }
@@ -2102,8 +2182,21 @@ function shadowSprite() {
   const k = theme.light ? 0.35 : 0.9;
   return Sprites.get('shadow', 64, c => { const grd = c.createRadialGradient(32, 32, 2, 32, 32, 32); grd.addColorStop(0, 'rgba(0,0,0,' + 0.6 * k + ')'); grd.addColorStop(0.55, 'rgba(0,0,0,' + 0.32 * k + ')'); grd.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = grd; c.fillRect(0, 0, 64, 64); });
 }
+// Gadget / feature glyphs, shared by the board, the tray button and shop previews.
+function drawGadgetIcon(g, kind, x, y, R) {
+  g.save(); g.translate(x, y); g.lineCap = 'round'; g.lineJoin = 'round';
+  if (kind === 'bumper') { g.fillStyle = theme.orange; circle(g, 0, 0, R); g.strokeStyle = '#fff'; g.lineWidth = R * 0.12; g.beginPath(); g.arc(0, 0, R * 0.58, 0, TAU); g.stroke(); }
+  else if (kind === 'tesla') { g.fillStyle = theme.teal; circle(g, 0, 0, R); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(R * 0.15, -R * 0.75); g.lineTo(-R * 0.4, R * 0.1); g.lineTo(0, R * 0.1); g.lineTo(-R * 0.15, R * 0.75); g.lineTo(R * 0.4, -R * 0.1); g.lineTo(0, -R * 0.1); g.closePath(); g.fill(); }
+  else if (kind === 'vortex') { g.strokeStyle = theme.purple; g.lineWidth = R * 0.16; for (let i = 0; i < 3; i++) { g.rotate(TAU / 3); g.beginPath(); for (let k = 0; k <= 10; k++) { const a = k * 0.32, rr2 = R * (0.15 + k * 0.085); g.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2); } g.stroke(); } }
+  else if (kind === 'gate') { g.fillStyle = theme.pink; rrect(g, -R, -R * 0.42, R * 2, R * 0.84, R * 0.42); g.fill(); g.fillStyle = '#fff'; g.font = font(700, R * 0.62); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('\u00D73', 0, 1); }
+  else if (kind === 'portal') { g.lineWidth = R * 0.22; g.strokeStyle = theme.blue; g.beginPath(); g.arc(-R * 0.42, 0, R * 0.5, 0, TAU); g.stroke(); g.strokeStyle = theme.orange; g.beginPath(); g.arc(R * 0.42, 0, R * 0.5, 0, TAU); g.stroke(); }
+  else if (kind === 'kicker') { g.rotate(-0.5); g.fillStyle = theme.green; rrect(g, -R, -R * 0.25, R * 2, R * 0.5, R * 0.25); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = R * 0.1; g.beginPath(); g.moveTo(-R * 0.5, 0); g.lineTo(R * 0.5, 0); g.stroke(); }
+  else if (kind === 'stars') { g.fillStyle = theme.yellow; for (const [ox, oy, sc] of [[-R * 0.45, R * 0.25, 0.55], [R * 0.45, R * 0.25, 0.55], [0, -R * 0.35, 0.6]]) { g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r2 = (i % 2 ? 0.42 : 1) * R * sc; g.lineTo(ox + Math.cos(a) * r2, oy + Math.sin(a) * r2); } g.closePath(); g.fill(); } }
+  g.restore();
+}
 // Bumper: a flat system-colour disc with a white ring (seeds are green, the Warden is red).
 function paintBumper(g, r, kind) {
+  if (kind === 't') { drawGadgetIcon(g, 'tesla', 0, 0, r); return; }
   const c = kind === 'w' ? theme.red : kind === 's' ? theme.green : [theme.orange, theme.pink, theme.purple, theme.indigo, theme.teal][+kind.slice(1) || 0];
   g.fillStyle = c; circle(g, 0, 0, r);
   g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(0, 0, r, Math.PI, TAU); g.fill();
@@ -2342,6 +2435,21 @@ function drawWorld(g, run, alpha, t, dtF) {
     }
     g.lineCap = 'butt'; g.restore();
   }
+  // portals: linked rings, blue and orange, with a slow swirl
+  for (const pt of run.portals) {
+    const col = pt.col ? theme.orange : theme.blue;
+    g.fillStyle = rgba(col, 0.14); circle(g, pt.x, pt.y, pt.r);
+    g.save(); g.translate(pt.x, pt.y); g.rotate(t * (pt.col ? -2 : 2)); g.strokeStyle = col; g.lineWidth = 3; g.setLineDash([7, 4]); g.beginPath(); g.arc(0, 0, pt.r, 0, TAU); g.stroke(); g.setLineDash([]); g.restore();
+    g.fillStyle = col; circle(g, pt.x, pt.y, 3);
+  }
+  // slingshots: green bars that flash when they fire
+  for (const k of run.kickers) {
+    g.save(); g.translate(k.x, k.y); g.rotate(k.a);
+    g.fillStyle = theme.light ? 'rgba(0,0,0,.08)' : 'rgba(0,0,0,.4)'; rrect(g, -k.w / 2 + 1, -k.h / 2 + 2.5, k.w, k.h, k.h / 2); g.fill();
+    g.fillStyle = k.flash > 0 ? mixHex(theme.green, '#ffffff', k.flash * 0.6) : theme.green; rrect(g, -k.w / 2, -k.h / 2, k.w, k.h, k.h / 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(-k.w / 2 + 8, 0); g.lineTo(k.w / 2 - 8, 0); g.stroke(); g.lineCap = 'butt';
+    g.restore(); if (k.flash > 0) k.flash = Math.max(0, k.flash - dtF * 5);
+  }
   // collectible gold stars
   for (const st of run.stars) {
     if (st.got) continue;
@@ -2406,7 +2514,7 @@ function drawWorld(g, run, alpha, t, dtF) {
   }
   // bumpers: polished brass; lit ones glow warm, Frenzy cycles the jewels through colours
   for (const bp of run.bumpers) {
-    const f = bp.flash || 0, sc = 1 + f * 0.12, r = bp.r * sc, kind = bp.warden ? 'w' : bp.seed ? 's' : 'n' + (bp.ci === undefined ? (bp.ci = ((Math.imul(Math.round(bp.x), 73856093) ^ Math.imul(Math.round(bp.y), 19349663)) >>> 0) % 5) : bp.ci);
+    const f = bp.flash || 0, sc = 1 + f * 0.12, r = bp.r * sc, kind = bp.warden ? 'w' : bp.tesla ? 't' : bp.seed ? 's' : 'n' + (bp.ci === undefined ? (bp.ci = ((Math.imul(Math.round(bp.x), 73856093) ^ Math.imul(Math.round(bp.y), 19349663)) >>> 0) % 5) : bp.ci);
     g.drawImage(shadow, bp.x - r * 1.05 + 3, bp.y - r * 0.9 + 5, r * 2.3, r * 2.1);
     const lit = bp.lit || run.frenzy > 0, gc = run.frenzy > 0 ? GLOW_HUES[Math.floor(t * 6 + bp.x * 0.05) % GLOW_HUES.length] : warm;
     if (add) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = lit ? 0.5 + 0.15 * Math.sin(t * 5 + bp.y) : 0.16; g.drawImage(glowSprite(gc), bp.x - r * 2.2, bp.y - r * 2.2, r * 4.4, r * 4.4); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
@@ -2610,9 +2718,9 @@ function drawHUD(g, run, t) {
 // a line describing the selected marble, and the kick counter.
 const TRAY_BAG_W = 72;
 function trayLayout(run) {
-  const x0 = L.colX + TRAY_BAG_W, x1 = L.colX + L.colW - 8, sp = 50;
-  const maxShow = Math.max(1, Math.min(7, Math.floor((x1 - x0) / 52))), shown = Math.min(run.hand.length, maxShow);
-  return { maxShow, shown, sp: 52, y: L.trayY + 30, startX: (x0 + x1) / 2 - (shown - 1) * 52 / 2, bagX: L.colX + 36 };
+  const gw = run.gadgets && run.gadgets.length ? 54 : 0, x0 = L.colX + TRAY_BAG_W, x1 = L.colX + L.colW - 8 - gw, sp = 50;
+  const spc = gw ? 47 : 52, maxShow = Math.max(1, Math.min(7, Math.floor((x1 - x0 - 18) / spc))), shown = Math.min(run.hand.length, maxShow);
+  return { maxShow, shown, sp: spc, y: L.trayY + 30, startX: (x0 + x1) / 2 - (shown - 1) * spc / 2 - (run.hand.length > shown ? 9 : 0), bagX: L.colX + 36, gadX: gw ? L.colX + L.colW - 8 - 30 : -999 };
 }
 function traySlotAt(run, px, py) {
   const tl = trayLayout(run);
@@ -2641,14 +2749,22 @@ function drawTray(g, run, t) {
   const showBank = !UI.bankHidden, tl = trayLayout(run);
   panel(g, L.colX + 8, tl.y - 28, L.colW - 16, 56, 18);
   drawBagIcon(g, tl.bagX, tl.y, run.bag.length);
+  if (run.gadgets.length) {   // gadget button: tap to pick one to place, tap again for the next, past the last to cancel
+    const gi = App.placing != null && App.placing < run.gadgets.length ? App.placing : 0, on = App.placing != null;
+    g.fillStyle = theme.frame; g.fillRect(tl.gadX - 28, tl.y - 18, 1, 36);
+    g.fillStyle = on ? rgba(theme.blue, 0.15) : theme.fill; rrect(g, tl.gadX - 20, tl.y - 20, 40, 40, 11); g.fill();
+    if (on) { g.strokeStyle = theme.blue; g.lineWidth = 2.5; rrect(g, tl.gadX - 20, tl.y - 20, 40, 40, 11); g.stroke(); }
+    drawGadgetIcon(g, run.gadgets[gi], tl.gadX, tl.y, 12);
+    if (run.gadgets.length > 1) { g.fillStyle = theme.blue; circle(g, tl.gadX + 17, tl.y - 17, 8); txtNeon(g, String(run.gadgets.length), tl.gadX + 17, tl.y - 16.5, 11, 'center', '#fff', null, 700); }
+  }
   g.fillStyle = theme.frame; g.fillRect(L.colX + TRAY_BAG_W - 4, tl.y - 18, 1, 36);
   const dealT = run.roomTick * T.STEP, dealing = run.throws === 0 && dealT < 1.4;
   if (n > 0) {
     const { maxShow, shown, sp, startX } = tl;
     for (let i = 0; i < shown; i++) {   // sockets
       const x = startX + i * sp;
-      g.fillStyle = theme.fill; circle(g, x, tl.y, 23);
-      if (i === 0) { g.strokeStyle = theme.blue; g.lineWidth = 2.5; g.beginPath(); g.arc(x, tl.y, 23, 0, TAU); g.stroke(); }
+      const sr = Math.min(23, sp / 2 - 1); g.fillStyle = theme.fill; circle(g, x, tl.y, sr);
+      if (i === 0) { g.strokeStyle = theme.blue; g.lineWidth = 2.5; g.beginPath(); g.arc(x, tl.y, sr, 0, TAU); g.stroke(); }
       if (i === 0 && Input.tray && Input.tray.moved && trayDropTarget(Input.tray) === 0) { g.fillStyle = rgba(theme.blue, 0.18 + 0.1 * Math.sin(t * 10)); circle(g, x, tl.y, 23); }
     }
     for (let i = 0; i < shown; i++) {
@@ -2666,7 +2782,7 @@ function drawTray(g, run, t) {
     }
     const tr = Input.tray;
     if (tr && tr.moved && tr.i > 0 && run.hand[tr.i]) { const m = run.hand[tr.i], R = 22 * Math.min(1.2, Math.max(0.8, sizeOf(m).r)); drawMarble(g, tr.x, tr.y - 10, R, R * L.dpr, m.mat, m.eng, 0, 1); }
-    if (n > maxShow) txtNeon(g, '+' + (n - maxShow), startX + shown * sp - 8, tl.y, 15, 'left', theme.ink2, null, 600);
+    if (n > maxShow) txtNeon(g, '+' + (n - maxShow), startX + (shown - 1) * sp + sp / 2 + 4, tl.y, 15, 'left', theme.ink2, null, 600);
   } else {
     txtNeon(g, run.cleared ? 'Target met' : 'Settling\u2026', (L.colX + TRAY_BAG_W + L.colX + L.colW) / 2, tl.y, 16, 'center', run.cleared ? theme.green : theme.ink2, null, 600);
   }
@@ -2677,7 +2793,8 @@ function drawTray(g, run, t) {
   if (run.throws === 0 && dealT < 3) segs = [[run.handSize < run.bag.length ? 'Drew ' + run.handSize + ' of ' + run.bag.length + ' marbles at random' : 'Your whole bag this room', theme.ink2]];
   else if (n > 1 && run.throws === 0 && dealT < 7) segs = [['Drag a marble to the first spot to throw it next', theme.ink2]];
   else if (n > 0) { const m = run.hand[0], z = sizeOf(m).name; segs = [['Next  ', theme.ink2], [(z ? z + ' ' : '') + MATS[m.mat].name + (m.lvl > 1 ? ' Lv ' + m.lvl : ''), theme.ink], ['  \u00B7  ', theme.ink2], [m.eng.length ? m.eng.map(e => ENGS[e].name).join(' + ') : 'No upgrades', m.eng.length ? theme.blue : theme.ink2]]; }
-  const tipI = App.tip ? Math.floor((App.time - App.tip.t0) / 2.6) : -1;
+  if (App.placing != null && run.gadgets[App.placing]) segs = [['Tap the board to place ', theme.ink2], [GADGETS[run.gadgets[App.placing]].name, theme.blue]];
+  const tipI = App.tip && App.placing == null ? Math.floor((App.time - App.tip.t0) / 2.6) : -1;
   if (App.tip && tipI >= 0 && tipI < App.tip.items.length) {   // marble info: name in ink, what it does in grey, wraps to two lines
     const [nm, ds] = App.tip.items[tipI], maxW = L.colW - 32;
     g.font = font(600, 14); const words = (nm + ': ' + ds).split(' '); let l1 = '', l2 = '';
@@ -2892,6 +3009,9 @@ function handleEvents(run, quiet) {
       case 'star': FX.glow(e.x, e.y, 40, 'rgba(255,220,120,1)', 0.35); FX.burst(e.x, e.y, 10, 160, '#ffe066', 0, 2, 0.45); if (snd) Sound.coin(); if (hap) hap.play([6]); break;
       case 'allstars': if (!quiet) FX.banner('ALL STARS!', '+300', '#ffe066', 1.4, 2); FX.burst(e.x, e.y, 30, 300, '#ffe066', 2, 3, 0.9, 200); if (snd) Sound.clear(); break;
       case 'frenzy': if (!quiet) FX.banner('FRENZY!', 'Every bumper lit: all points ×2 for 6s', '#ff8fd1', 1.6, 3); FX.addFlash(0.25, '#ff8fd1'); if (snd) Sound.chaosUp(4); if (hap) hap.play(HAPTIC.clear); break;
+      case 'portal': FX.ring(e.x1, e.y1, 16, 4, 0.3, theme.blue, 3); FX.ring(e.x2, e.y2, 4, 22, 0.35, theme.orange, 3); if (snd) Sound.clone(); break;
+      case 'kicker': FX.ring(e.x, e.y, 6, 26, 0.25, theme.green, 3); if (snd) Sound.bumper(); if (hap) hap.play(HAPTIC.bumper); break;
+      case 'placed': FX.ring(e.x, e.y, 30, 6, 0.4, theme.blue, 3); FX.burst(e.x, e.y, 10, 140, theme.blue, 0, 2, 0.4); if (snd) Sound.sprout(); if (hap) hap.play(HAPTIC.tap); break;
       case 'gate': if (snd) Sound.gate(); FX.burst(e.x, e.y, 6, 80, '#ffd166', 0, 1.8, 0.3); break;
       case 'echo': FX.ring(e.x, e.y, 4, 30, 0.4, '#c9a7ff', 3); break;
       case 'orbSpawn': FX.ring(e.x, e.y, 40, 10, 0.5, '#ffd166', 4); if (!quiet) FX.banner('GOLDEN ORB!', 'Hit it before it fades', '#ffd166', 1.1, 1); if (snd) Sound.orb(); break;
@@ -3228,6 +3348,14 @@ function showRecords(tab) {
 }
 
 // Lists the engravings this one pairs with; ones already in your bag are highlighted.
+// A small picture of a gadget, for cards and the shop.
+function gadgetPrev(kind, sm) {
+  const c = document.createElement('canvas'), css = sm ? 44 : 64, d = Math.min(3, window.devicePixelRatio || 1);
+  c.width = c.height = Math.round(css * d); const g = c.getContext('2d'); g.setTransform(d, 0, 0, d, 0, 0);
+  g.fillStyle = theme.fill; rrect(g, 0, 0, css, css, css * 0.25); g.fill();
+  drawGadgetIcon(g, kind, css / 2, css / 2, css * 0.3);
+  return '<img class="mprev' + (sm ? ' sm' : '') + '" alt="" src="' + c.toDataURL() + '">';
+}
 function comboHint(e) {
   const run = App.run; if (!run || !e) return '';
   const own = {}; for (const m of run.bag) for (const x of m.eng) own[x] = 1;
@@ -3244,6 +3372,7 @@ function cardInfo(c) {
     case 'polish': if (c.amount === 2) return { tag: 'POLISH', name: 'Master Polish', desc: 'One marble gains 2 levels.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:22px">LV++</div>' };
       return { tag: 'POLISH', name: 'Level Up', desc: 'One marble gains a level: +50% points per level.', prev: '<div class="badge" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:24px">LV+</div>' };
     case 'charm': return { tag: 'CHARM', name: CHARMS[c.charm].name, desc: CHARMS[c.charm].desc, prev: '<div class="badge">' + CHARMS[c.charm].glyph + '</div>', charm: true };
+    case 'gadget': return { tag: 'GADGET', name: GADGETS[c.g].name, desc: GADGETS[c.g].desc + ' One use, whenever you like.', prev: gadgetPrev(c.g) };
   }
   return { tag: '', name: '', desc: '', prev: '' };
 }
@@ -3275,6 +3404,7 @@ function showPick(viewOnly, backFn) {
     return '<button class="tile ' + (viewOnly ? 'view' : '') + '" ' + (valid ? '' : 'disabled') + (viewOnly ? '' : ' data-act="target" data-arg="' + i + '"') + '>' + prevCanvas(m.mat, m.eng) +
       '<div>' + (sizeOf(m).name ? sizeOf(m).name + ' ' : '') + MATS[m.mat].name + '</div><div class="lv">LV ' + m.lvl + (m.lvl > 1 ? ' · ×' + (1 + 0.5 * (m.lvl - 1)) + ' pts' : '') + (viewOnly && run.phase === 'play' && run.hand.indexOf(m) >= 0 ? ' · IN HAND' : '') + '</div>' + (self ? '<div class="chint"><span class="yes">⚡ Combo</span></div>' : '') + '<div class="muted" style="font-size:14px;line-height:1.1">' + (m.eng.map(e => ENGS[e].name).join(' + ') || '—') + '</div></button>';
   }).join('');
+  const gadgetsHTML = viewOnly && run.gadgets.length ? '<h3>Gadgets</h3><div class="list">' + run.gadgets.map(k => '<div class="li">' + gadgetPrev(k, true) + '<div class="grow"><div class="nm">' + GADGETS[k].name + '</div><div class="ds">' + GADGETS[k].desc + '</div></div></div>').join('') + '</div>' : '';
   const charms = run.charms.length ? '<h3>Charms</h3><div class="list">' + run.charms.map(c => '<div class="li"><div class="badge sm">' + CHARMS[c].glyph + '</div><div class="grow"><div class="nm">' + CHARMS[c].name + '</div><div class="ds">' + CHARMS[c].desc + '</div></div></div>').join('') + '</div>' : '';
   let foot;
   if (viewOnly) foot = '<button class="btn primary" data-act="back">Close</button>';
@@ -3282,7 +3412,7 @@ function showPick(viewOnly, backFn) {
   else foot = '';
   UI.show('pick', '<div class="col"><h2>' + (viewOnly ? 'Your bag (' + run.bag.length + ')' : esc(pickTitle(p.card))) + '</h2>' +
     (viewOnly ? (run.phase === 'play' ? '<p class="center muted">Game paused. Each room deals ' + run.handSize + ' of these at random; ' + run.hand.length + ' still in your hand.</p>' : '') : '<p class="center muted">' + esc(cardInfo(p.card).desc || '') + '</p>') +
-    '<div class="grid">' + tiles + '</div>' + (viewOnly ? charms : '') + '<div class="spacer"></div>' + (foot ? '<div class="foot">' + foot + '</div>' : '') + '</div>');
+    '<div class="grid">' + tiles + '</div>' + (viewOnly ? gadgetsHTML + charms : '') + '<div class="spacer"></div>' + (foot ? '<div class="foot">' + foot + '</div>' : '') + '</div>');
   if (viewOnly) spinPreviews(UI.scr.querySelector('.grid'));
 }
 // The bag view: each marble's preview slowly rotates instead of sitting still. Purely cosmetic.
@@ -3305,6 +3435,7 @@ function spinPreviews(root) {
 function shopItemInfo(it) {
   if (it.kind === 'marble') return { name: (it.rarity && it.rarity !== 'c' ? RARITY[it.rarity].name.charAt(0) + RARITY[it.rarity].name.slice(1).toLowerCase() + ' · ' : '') + marbleName(it), desc: ENGS[it.eng[0]].desc + (it.eng[1] ? ' Also: ' + ENGS[it.eng[1]].name + '.' : ''), prev: prevCanvas(it.mat, it.eng, true), hint: comboHint(it.eng[0]) };
   if (it.kind === 'charm') return { name: CHARMS[it.charm].name + ' (charm)', desc: CHARMS[it.charm].desc + ' ' + App.run.charms.length + '/' + T.CHARM_SLOTS + ' slots used.', prev: '<div class="badge sm">' + CHARMS[it.charm].glyph + '</div>' };
+  if (it.kind === 'gadget') return { name: GADGETS[it.g].name + ' (gadget)', desc: GADGETS[it.g].desc + ' Tap it in the tray, then tap the board. ' + App.run.gadgets.length + '/' + MAX_GADGETS + ' held.', prev: gadgetPrev(it.g, true) };
   if (it.kind === 'polish') return { name: 'Level Up', desc: '+1 level to a marble you choose.', prev: '<div class="badge sm" style="background:#4a3a00;border-color:#ffd166;color:#ffd166;font-size:16px">LV+</div>' };
   return { name: 'Remove Marble', desc: 'Thin your bag so your best marbles come up more.', prev: '<div class="badge sm" style="background:#3a1010;border-color:#ff6b7f;color:#ff6b7f">✕</div>' };
 }
@@ -3507,7 +3638,14 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   const tlb = trayLayout(App.run);
-  if (Math.hypot(e.clientX - tlb.bagX, e.clientY - tlb.y) < 32) { App.viewBag(); return; }   // tap the bag to see all your marbles
+  if (Math.hypot(e.clientX - tlb.bagX, e.clientY - tlb.y) < 32) { App.viewBag(); return; }
+  if (App.run.gadgets.length && Math.hypot(e.clientX - tlb.gadX, e.clientY - tlb.y) < 28) {   // gadget button
+    App.placing = App.placing == null ? 0 : App.placing + 1 < App.run.gadgets.length ? App.placing + 1 : null; Sound.ui(); Platform.haptics.play(HAPTIC.tap); return;
+  }
+  if (App.placing != null) {   // placing a gadget: a tap on the board puts it there
+    if (e.clientX >= L.ax && e.clientX <= L.ax + L.aw && e.clientY >= L.ay && e.clientY <= L.ay + L.ah) App.act({ a: 'place', i: App.placing, x: Math.round(Input.worldX(e.clientX) * 10), y: Math.round(Input.worldY(e.clientY) * 10) });
+    App.placing = null; return;
+  }   // tap the bag to see all your marbles
   const slot = traySlotAt(App.run, e.clientX, e.clientY);
   if (slot >= 0) {                                          // drag a tray marble to the first spot (or tap it) to throw it next
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
@@ -3742,25 +3880,25 @@ function startRun(mode, seed, opts) {
   App.bestForMode = App.rival ? App.rival.s : daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.best : 0) : SAVE.stats.bestScore;
   App.challenges = pickChallenges(daily); App.chalDone = {}; App.goalShards = 0; App.overInfo = null;
   App.ini = (SAVE.initials || 'AAA').padEnd(3, 'A').slice(0, 3).split('');
-  App.state = 'play'; App.tip = null; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.pbShown = false; App.zoom = null; App.tapHint = 0; App.bufferedFling = null;
+  App.state = 'play'; App.tip = null; App.placing = null; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.pbShown = false; App.zoom = null; App.tapHint = 0; App.bufferedFling = null;
   UI.hide(); UI.closeModal(); UI.hideCountdown();
   Sound.Music.setMode('play'); Platform.wake.request();
   handleEvents(App.run, false);
 }
 /* ---------------- friend challenges: your exact run, sent as a link ---------------- */
-const ACT_CODES = ['fling', 'kick', 'bank', 'card', 'skip', 'target', 'cancel', 'buy', 'reroll', 'leave', 'select'];
+const ACT_CODES = ['fling', 'kick', 'bank', 'card', 'skip', 'target', 'cancel', 'buy', 'reroll', 'leave', 'select', 'place'];
 function packRecord(rec) {
   let lt = 0; const a = [];
   for (const x of rec.actions) {
     const row = [x.t - lt, ACT_CODES.indexOf(x.a)]; lt = x.t;
-    if (x.a === 'fling') row.push(x.x, x.y, x.g, x.p); else if (x.i !== undefined) row.push(x.i);
+    if (x.a === 'fling') row.push(x.x, x.y, x.g, x.p); else if (x.a === 'place') row.push(x.i, x.x, x.y); else if (x.i !== undefined) row.push(x.i);
     a.push(row);
   }
   return { v: rec.v, c: rec.cfg, a };
 }
 function unpackRecord(p) {
   let t = 0;
-  const actions = p.a.map(r => { t += r[0]; const o = { a: ACT_CODES[r[1]], t }; if (o.a === 'fling') { o.x = r[2]; o.y = r[3]; o.g = r[4]; o.p = r[5]; } else if (r.length > 2) o.i = r[2]; return o; });
+  const actions = p.a.map(r => { t += r[0]; const o = { a: ACT_CODES[r[1]], t }; if (o.a === 'fling') { o.x = r[2]; o.y = r[3]; o.g = r[4]; o.p = r[5]; } else if (o.a === 'place') { o.i = r[2]; o.x = r[3]; o.y = r[4]; } else if (r.length > 2) o.i = r[2]; return o; });
   return { v: p.v, cfg: p.c, actions };
 }
 const b64e = str => btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

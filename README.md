@@ -44,7 +44,9 @@ Every run uses a random seed, and every engraving, material and charm can show u
 
 **Combos (the heart of a run):** 28 named combos fire when two engravings meet in one collision, either on the two marbles that hit or both on one marble. Each has its own effect: lightning that chains to nearby marbles, explosions, pulls, freezes, new bumpers, clones, speed bursts, Chaos surges or coins. Upgrade offers lean toward engravings that combo with what's in your bag, and every card and shop item shows which engravings it pairs with (highlighted when you already own one). Discovered combos and what they do fill a codex under Records.
 
-**Arcade board:** big bumpers that light up (light them all once per room for a ×2 Frenzy), ×2 and ×3 gates, boost pads, vortexes, multiball orbs and collectible stars.
+**Arcade board:** big bumpers that light up (light them all once per room for a ×2 Frenzy), ×2 and ×3 gates, boost pads, vortexes, multiball orbs and collectible stars. From room 2 each room also gets one feature piece (two from room 6): **portals** (in one, out the other), **slingshots** (bars that fire marbles off them), **tesla coils** (zap the nearest marbles when hit) or a **spinner** (a rotating paddle).
+
+**Gadgets:** pieces you place yourself. Buy them in the shop or take one as a free pick, hold up to 3, and use each once whenever you like: tap the gadget button at the right of the tray, then tap the board. Pocket Bumper, Tesla Coil, Vortex, ×3 Gate, Portal Pair, Slingshot and Star Cluster.
 
 **Events:** golden orbs, room modifiers (Slick Floor, Sticky Floor, Super Walls, Blackout, Gold Fever, Bumper Party) and a boss every 5th room with a health bar and telegraphed attacks (The Warden, The Crusher, The Spinner, Juggernaut, The Glutton).
 
