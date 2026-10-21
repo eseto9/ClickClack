@@ -209,7 +209,7 @@ h3{font-family:inherit;font-weight:700;color:#ff9a45}
 #bankBtn{background:linear-gradient(180deg,#ffc070 0%,#ff8a2a 55%,#d4570a 100%);border:1px solid #ffd9a8;color:#2a1000;box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 5px 0 #7a2e04,0 8px 22px rgba(0,0,0,.45)}
 #ffBtn{background:linear-gradient(180deg,#7ff0f4,#1fa6b2);border-color:#c8fbfd;color:#04232a;box-shadow:inset 0 2px 0 rgba(255,255,255,.4),0 5px 0 #0b5560,0 8px 22px rgba(0,0,0,.45)}
 /* ---- iOS skin (overrides) ---- */
-:root{--bg:#F2F2F7;--card:#fff;--ink:#000;--muted:#8E8E93;--line:#E5E5EA;--fill:#E9E9EE;--accent:#007AFF;--blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--purple:#AF52DE;--gold:#FF9500;--good:#34C759;--bad:#FF3B30;--panel:#fff;--panel2:#E9E9EE;--bg0:rgba(242,242,247,0);--veilA:rgba(242,242,247,.55);--veilB:rgba(242,242,247,.97);--shadow:0 1px 3px rgba(0,0,0,.08),0 6px 18px rgba(0,0,0,.06)}
+:root{--bg:#F2F2F7;--card:#fff;--ink:#000;--muted:#8E8E93;--line:#E5E5EA;--fill:#E9E9EE;--accent:#007AFF;--blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--purple:#AF52DE;--indigo:#5856D6;--gold:#FF9500;--good:#34C759;--bad:#FF3B30;--panel:#fff;--panel2:#E9E9EE;--bg0:rgba(242,242,247,0);--veilA:rgba(242,242,247,.55);--veilB:rgba(242,242,247,.97);--shadow:0 1px 3px rgba(0,0,0,.08),0 6px 18px rgba(0,0,0,.06)}
 html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
 #screen{background:var(--bg)}
 #screen.see{background:linear-gradient(180deg,var(--veilA) 0%,var(--bg0) 28%,var(--veilA) 55%,var(--veilB) 76%)}
@@ -270,6 +270,10 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
 .hrow .ds{color:var(--muted);font-size:14px;line-height:1.25}
 .hrow .right{text-align:right;white-space:nowrap}
 .hrow .grow{flex:1;min-width:0}
+.hrow.tap{cursor:pointer}.hrow.tap:active{background:var(--fill)}
+.hrow .chev{color:var(--muted);font-size:24px;line-height:1;transition:transform .2s}
+.hrow.open .chev{transform:rotate(90deg)}
+canvas.demo{display:block;width:calc(100% - 28px);height:150px;margin:0 14px 12px;border-radius:12px}
 .hrow.locked .nm{color:var(--muted)}
 .small{font-size:14px}
 .rank{width:30px;height:30px;flex:0 0 30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
@@ -339,7 +343,7 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
    ===================================================================== */
 
 /* ======================= 1. TUNING CONSTANTS ======================= */
-const GAME_VERSION = 13;             // bump when sim rules change (invalidates old ghosts)
+const GAME_VERSION = 14;             // bump when sim rules change (invalidates old ghosts)
 const T = {
   W: 360, H: 540,                   // arena size in world units
   STEP: 1 / 120,                    // fixed simulation step (seconds)
@@ -557,7 +561,7 @@ const PATHS = {
   calm:   { name: 'Calm Room',     icon: '☾', tmult: 0.7,  desc: 'Target −30%. No free powerup after.' },
   elite:  { name: 'Elite Room',    icon: '★', tmult: 1.5,  desc: 'Target +50%. Guaranteed powerup after, with better odds of rares.' },
   wild:   { name: 'Wild Room',     icon: '✦', tmult: 1,    desc: 'Random modifier. Points ×1.25, +5 coins.' },
-  boss:   { name: 'Boss Room',     icon: '☠', tmult: 1.35, desc: 'No way around it.' },
+  boss:   { name: 'Boss Room',     icon: '☠', tmult: 1.2, desc: 'No way around it.' },
 };
 const BASE_POOL = { mats: ['steel', 'rubber'], engs: ['spark', 'bomb', 'magnet', 'gold', 'crown', 'seed', 'blackhole', 'split'], charms: ['wallstreet', 'tenth', 'bumpercrop', 'hotstart', 'bigbag', 'demolition', 'overcharge', 'lucky7'] };
 const ALL_POOL = { mats: ['steel', 'rubber', 'glass', 'ice', 'lead'], engs: Object.keys(ENGS), charms: Object.keys(CHARMS) };
@@ -922,6 +926,7 @@ class Run {
     this.buildRoom(n);
     // Rooms 1-4: the target can't exceed what hitting everything on the board is worth (with a little chaos),
     // so clearing the whole table always beats (or nearly beats) an early room.
+    if (this.boss && this.boss.kind === 'warden') this.target = Math.round(this.target * 0.8 / 50) * 50;   // first boss: the challenge is the shockwave, not the number
     if (n <= 4 && !this.boss) this.target = Math.min(this.target, Math.max(600, Math.round(this.roomValue() * (3 + n) / 50) * 50));
     const order = this.rr.shuffle(this.bag.slice());
     const handN = T.HAND + (this.has('bigbag') ? 1 : 0) + (this.cfg.assist ? 1 : 0) + (n === 1 && this.cfg.perks.indexOf('spare') >= 0 ? 1 : 0);
@@ -972,7 +977,7 @@ class Run {
       const kind = BOSS_ORDER[(n / T.BOSS_EVERY - 1) % BOSS_ORDER.length];
       this.boss = { kind, atk: 2.5, warn: 0 };   // first attack comes 4s after the first throw
       if (kind === 'warden') {
-        const hp2 = 18 + n * 2, wy = rr.pick([H * 0.3, H * 0.5, H * 0.7]);
+        const hp2 = 10 + n, wy = rr.pick([H * 0.3, H * 0.5, H * 0.7]);
         this.boss.bp = { x: cx, y: wy, r: 30, hp: hp2, maxHp: hp2, flash: 0, warden: true, id: 'warden' };
         this.bumpers.push(this.boss.bp);
         for (let x = 30; x <= W - 30; x += 50) placed.push({ x, y: wy, r: 34 });
@@ -1409,7 +1414,7 @@ class Run {
     bp.hp -= dmg;
     if (bp.hp <= 0) {
       bp.dead = true; this.bumpers = this.bumpers.filter(x => x !== bp);
-      this.award(400 + this.roomIdx * 60, bp.x, bp.y, 'bonus', null, null, { label: 'JACKPOT!' });
+      this.award(700 + this.roomIdx * 100, bp.x, bp.y, 'bonus', null, null, { label: 'JACKPOT!' });
       this.emit('boom', { x: bp.x, y: bp.y, r: 130, big: true, jackpot: true });
     } else this.emit('bumper', { x: bp.x, y: bp.y, boss: true });
   }
@@ -1444,13 +1449,13 @@ class Run {
     if (!this.boss) return;
     const B = this.boss, t = this.firstThrow >= 0 ? (this.roomTick - this.firstThrow) * dt : 0;
     const hpFrac = clamp(1 - this.roomScore / this.target, 0, 1);
-    if (B.kind === 'warden' && !B.bp.dead) B.bp.x = T.W / 2 + Math.sin(t * 0.8) * (T.W / 2 - 50);
+    if (B.kind === 'warden' && !B.bp.dead) B.bp.x = T.W / 2 + Math.sin(t * 0.55) * (T.W / 2 - 50);
     if (B.kind === 'glutton') B.hole.r = Math.min(56, 22 + t * 1.1);
     if (B.kind === 'spinner') { const arm = B.arm; arm.w0 = (0.9 + 1.8 * (1 - hpFrac)) * (this.cleared ? 0.3 : 1); arm.a += arm.w0 * dt; arm.c = Math.cos(arm.a); arm.s = Math.sin(arm.a); }
     // attacks: every 6.5s after the first throw, telegraphed 1.2s ahead; they stop once the boss is beaten
     if (this.firstThrow >= 0 && !this.cleared && B.kind !== 'spinner') {
       if (B.warn > 0) { B.warn -= dt; if (B.warn <= 0) { B.warn = 0; this.bossAttack(B); } }
-      else { B.atk += dt; if (B.atk >= 6.5) { B.atk = 0; B.warn = 1.2; const p = this.bossPos(); this.emit('bossWarn', { kind: B.kind, x: p.x, y: p.y }); } }
+      else { B.atk += dt; if (B.atk >= (B.kind === 'warden' ? 8.5 : 6.5)) { B.atk = 0; B.warn = 1.2; const p = this.bossPos(); this.emit('bossWarn', { kind: B.kind, x: p.x, y: p.y }); } }
     }
     const j = this.jugg;
     if (j) {
@@ -1480,10 +1485,10 @@ class Run {
       for (const m of this.marbles) {
         if (!m.alive || m.frozen > 0) continue;
         const dx = m.x - p.x, dy = m.y - p.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (d > 170) continue;
-        const f = 560 * (1 - d / 170) / m.m; m.vx += dx / d * f; m.vy += dy / d * f; m.moved = true;
+        if (d > 140) continue;
+        const f = 360 * (1 - d / 140) / m.m; m.vx += dx / d * f; m.vy += dy / d * f; m.moved = true;
       }
-      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y, r: 170 });
+      this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y, r: 140 });
     } else if (B.kind === 'crusher') {                  // walls close in
       this.inset = Math.min(50, (this.inset || 0) + 12);
       this.emit('bossAttack', { kind: B.kind, x: p.x, y: p.y });
@@ -1964,7 +1969,7 @@ function setTheme(id) {
   theme = t; Sprites.clear();
   const st = document.documentElement.style, v = (k, x) => st.setProperty(k, x);
   v('--bg', t.bg); v('--card', t.card); v('--ink', t.ink); v('--muted', t.ink2); v('--line', t.frame); v('--fill', t.fill);
-  v('--accent', t.blue); v('--blue', t.blue); v('--green', t.green); v('--red', t.red); v('--orange', t.orange); v('--purple', t.purple);
+  v('--accent', t.blue); v('--blue', t.blue); v('--green', t.green); v('--red', t.red); v('--orange', t.orange); v('--purple', t.purple); v('--indigo', t.indigo);
   v('--gold', t.orange); v('--good', t.green); v('--bad', t.red); v('--panel', t.card); v('--panel2', t.fill);
   v('--bg0', rgba(t.bg, 0)); v('--veilA', rgba(t.bg, 0.55)); v('--veilB', rgba(t.bg, 0.97)); v('--shadow', t.light ? '0 1px 3px rgba(0,0,0,.08),0 6px 18px rgba(0,0,0,.06)' : 'none');
   document.querySelector('meta[name=theme-color]').setAttribute('content', t.bg);
@@ -2423,7 +2428,7 @@ function drawWorld(g, run, alpha, t, dtF) {
   if (run.boss && run.boss.warn > 0) {
     const p = run.bossPos(), k = 1 - run.boss.warn / 1.2, pulse = 0.5 + 0.5 * Math.sin(t * 22);
     if (run.boss.kind === 'crusher') { g.strokeStyle = 'rgba(255,77,109,' + (0.4 + 0.5 * pulse).toFixed(2) + ')'; g.lineWidth = 6; const ins = (run.inset || 0) + 12; g.strokeRect(ins, ins, T.W - ins * 2, T.H - ins * 2); }
-    else { g.strokeStyle = 'rgba(255,77,109,' + (0.5 + 0.5 * pulse).toFixed(2) + ')'; g.lineWidth = 4; g.beginPath(); g.arc(p.x, p.y, 20 + k * (run.boss.kind === 'warden' ? 150 : 40), 0, TAU); g.stroke(); }
+    else { g.strokeStyle = 'rgba(255,77,109,' + (0.5 + 0.5 * pulse).toFixed(2) + ')'; g.lineWidth = 4; g.beginPath(); g.arc(p.x, p.y, 20 + k * (run.boss.kind === 'warden' ? 120 : 40), 0, TAU); g.stroke(); }
   }
   // closing walls: dark mahogany sliding in
   if (run.inset > 0) {
@@ -2672,7 +2677,19 @@ function drawTray(g, run, t) {
   if (run.throws === 0 && dealT < 3) segs = [[run.handSize < run.bag.length ? 'Drew ' + run.handSize + ' of ' + run.bag.length + ' marbles at random' : 'Your whole bag this room', theme.ink2]];
   else if (n > 1 && run.throws === 0 && dealT < 7) segs = [['Drag a marble to the first spot to throw it next', theme.ink2]];
   else if (n > 0) { const m = run.hand[0], z = sizeOf(m).name; segs = [['Next  ', theme.ink2], [(z ? z + ' ' : '') + MATS[m.mat].name + (m.lvl > 1 ? ' Lv ' + m.lvl : ''), theme.ink], ['  \u00B7  ', theme.ink2], [m.eng.length ? m.eng.map(e => ENGS[e].name).join(' + ') : 'No upgrades', m.eng.length ? theme.blue : theme.ink2]]; }
-  if (!segs) segs = [['Tap to kick', theme.ink2]];
+  const tipI = App.tip ? Math.floor((App.time - App.tip.t0) / 2.6) : -1;
+  if (App.tip && tipI >= 0 && tipI < App.tip.items.length) {   // marble info: name in ink, what it does in grey, wraps to two lines
+    const [nm, ds] = App.tip.items[tipI], maxW = L.colW - 32;
+    g.font = font(600, 14); const words = (nm + ': ' + ds).split(' '); let l1 = '', l2 = '';
+    for (const w of words) { if (!l2 && g.measureText(l1 + (l1 ? ' ' : '') + w).width <= maxW) l1 += (l1 ? ' ' : '') + w; else l2 += (l2 ? ' ' : '') + w; }
+    const two = !!l2, y1 = two ? lineY - 9 : lineY;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const sc2 = Math.min(1, maxW / Math.max(1, g.measureText(l2).width));
+    const drawLine = (txt, y, sc) => { g.font = font(600, Math.floor(14 * sc)); const nmW = txt.indexOf(nm + ':') === 0 ? g.measureText(nm + ':').width : 0, tw = g.measureText(txt).width; let x = cx - tw / 2; g.textAlign = 'left';
+      if (nmW) { g.fillStyle = theme.ink; g.fillText(nm + ':', x, y); x += nmW; g.fillStyle = theme.ink2; g.fillText(txt.slice(nm.length + 1), x, y); } else { g.fillStyle = theme.ink2; g.fillText(txt, x, y); } };
+    drawLine(l1, y1, 1); if (two) drawLine(l2, y1 + 18, sc2);
+    segs = null;
+  } else if (!segs) segs = [['Tap to kick', theme.ink2]];
   if (segs) {
     g.font = font(600, 15); let tw = 0; for (const [s2] of segs) tw += g.measureText(s2).width;
     const sc = Math.min(1, (L.colW - 40 - kickW) / tw);
@@ -2975,10 +2992,15 @@ const UI = {
     });
   },
   // Explains the selected marble's material and engravings (one at a time, replaces the last tip).
+  // What the selected marble does, shown one fact at a time in the line under the tray.
   marbleTip(m) {
-    if (this.tipEl) this.tipEl.remove();
-    const d = document.createElement('div'); d.className = 'toast'; d.style.borderColor = '#4cc9f0'; d.innerHTML = marbleDetails(m);
-    this.toasts.appendChild(d); this.tipEl = d; setTimeout(() => { d.remove(); if (this.tipEl === d) this.tipEl = null; }, 2900);
+    if (!m) return;
+    const items = [], z = sizeOf(m);
+    if (m.mat !== 'clay' || !m.eng.length) items.push([MATS[m.mat].name, MATS[m.mat].desc]);
+    if (z.name) items.push([z.name, z.desc]);
+    for (const e of m.eng) items.push([ENGS[e].name, ENGS[e].desc]);
+    if (m.lvl > 1) items.push(['Level ' + m.lvl, '×' + (1 + 0.5 * (m.lvl - 1)) + ' points on every hit it makes']);
+    App.tip = { items, t0: App.time };
   },
   toast(html) {
     const d = document.createElement('div'); d.className = 'toast'; d.innerHTML = html; this.toasts.appendChild(d);
@@ -3047,16 +3069,116 @@ const ICON = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
 };
 const ico = (name, col, fill) => '<span class="ico" style="background:' + col + '"><svg viewBox="0 0 24 24" fill="' + (fill ? '#fff' : 'none') + '" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + ICON[name] + '</svg></span>';
+// Little looping demos for How to Play, drawn with the game's own marbles.
+const HelpDemo = {
+  toggle(row, kind) {
+    const nx = row.nextElementSibling;
+    document.querySelectorAll('#screen .hrow.open').forEach(r => r.classList.remove('open'));
+    if (nx && nx.classList.contains('demo')) { nx.remove(); return; }
+    document.querySelectorAll('#screen canvas.demo').forEach(c => c.remove());
+    const c = document.createElement('canvas'); c.className = 'demo'; row.after(c); row.classList.add('open');
+    const d = Math.min(3, window.devicePixelRatio || 1), W = c.clientWidth || 320, H = 150; c.width = Math.round(W * d); c.height = Math.round(H * d);
+    const g = c.getContext('2d'), t0 = performance.now(), per = kind === 'star' ? 3.4 : 3.2;
+    const loop = now => {
+      if (!document.body.contains(c)) return;
+      g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, W, H);
+      g.fillStyle = theme.bg; rrect(g, 0, 0, W, H, 12); g.fill();
+      g.fillStyle = fgA(0.07); for (let y = 10; y < H; y += 16) for (let x = 10; x < W; x += 16) { g.beginPath(); g.arc(x, y, 0.8, 0, TAU); g.fill(); }
+      try { this.draw(g, kind, W, H, ((now - t0) / 1000) % per, d); } catch (err) {}
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  },
+  draw(g, kind, W, H, t, d) {
+    const ease = x => 1 - Math.pow(1 - clamp(x, 0, 1), 3);
+    const M = (x, y, r, mat, eng, spin, a) => drawMarble(g, x, y, r, r * d, mat, eng || [], spin || 0, a);
+    const bump = (x, y, r, col, fl) => { g.fillStyle = col; circle(g, x, y, r); g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = r * 0.1; g.beginPath(); g.arc(x, y, r * 0.58, 0, TAU); g.stroke(); g.fillStyle = '#fff'; circle(g, x, y, r * 0.2); if (fl > 0) { g.globalAlpha = fl; g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r + 4 + (1 - fl) * 14, 0, TAU); g.stroke(); g.globalAlpha = 1; } };
+    const pop = (x, y, txt, col, k) => { if (k < 0 || k > 1) return; g.globalAlpha = 1 - k; txtNeon(g, txt, x, y - 22 * k, 15, 'center', col, null, 700); g.globalAlpha = 1; };
+    const finger = (x, y, a) => { g.globalAlpha = a; g.fillStyle = fgA(0.18); circle(g, x, y, 15); g.strokeStyle = fgA(0.35); g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, TAU); g.stroke(); g.globalAlpha = 1; };
+    const ring = (x, y, k, col, R) => { if (k < 0 || k > 1) return; g.globalAlpha = 1 - k; g.strokeStyle = col; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 6 + R * ease(k), 0, TAU); g.stroke(); g.globalAlpha = 1; };
+    const cap = (txt) => txtNeon(g, txt, W / 2, H - 12, 12, 'center', theme.ink2, null, 600);
+    if (kind === 'fling') {
+      const mx = W * 0.32, my = H * 0.6, dx = 0.82, dy = -0.57, r = 9;
+      if (t < 1.2) {
+        const k = ease(t / 1.1), fx = mx - dx * 46 * k, fy = my - dy * 46 * k;
+        g.strokeStyle = fgA(0.3); g.setLineDash([3, 5]); g.lineWidth = 2; g.beginPath(); g.moveTo(mx, my); g.lineTo(fx, fy); g.stroke(); g.setLineDash([]);
+        const len = 18 + 70 * k, ex = mx + dx * len, ey = my + dy * len;
+        g.strokeStyle = theme.blue; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(mx, my); g.lineTo(ex, ey); g.stroke(); g.lineCap = 'butt';
+        g.fillStyle = theme.blue; g.beginPath(); g.moveTo(ex + dx * 8, ey + dy * 8); g.lineTo(ex - dy * 6, ey + dx * 6); g.lineTo(ex + dy * 6, ey - dx * 6); g.fill();
+        g.save(); g.translate(mx, my); g.rotate(Math.atan2(dy, dx)); g.scale(1 + 0.22 * k, 1 - 0.12 * k); M(0, 0, r, 'clay'); g.restore();
+        finger(fx, fy, 1); cap('Touch, pull back\u2026');
+      } else {
+        const tt = t - 1.2, sdist = 330 * (1 - Math.exp(-1.3 * tt)) / 1.3;
+        let x = mx + dx * sdist, y = my + dy * sdist;
+        if (y < r) y = 2 * r - y; if (x > W - r) x = 2 * (W - r) - x;
+        ring(mx, my, tt / 0.35, theme.blue, 24); M(x, y, r, 'clay', [], sdist / r); cap('\u2026let go!');
+      }
+    } else if (kind === 'hit') {
+      const bx = W * 0.5, by = H * 0.5, br = 17, r0 = 9;
+      const restX = W * 0.8, restY = H * 0.24;
+      let x, y, r = r0, hits = 0;
+      if (t < 0.7) { x = 18 + (bx - br - r0 - 18) * (t / 0.7); y = by + 4; }
+      else if (t < 1.4) { hits = 1; const k = (t - 0.7) / 0.7; x = lerp(bx - br - r0, restX - 2 * r0, k); y = lerp(by + 4, restY + 4, k); }
+      else { hits = 2; const k = ease((t - 1.4) / 1.2); x = lerp(restX - 2 * r0, restX - 2 * r0 - 30, k); y = lerp(restY + 4, restY + 40, k); }
+      r = r0 * (1 + 0.14 * hits);
+      bump(bx, by, br, theme.purple, t > 0.7 && t < 1.1 ? 1 - (t - 0.7) / 0.4 : 0);
+      const rx = t < 1.4 ? restX : lerp(restX, W - 12, ease((t - 1.4) / 1.2)), ry = t < 1.4 ? restY : lerp(restY, 14, ease((t - 1.4) / 1.2));
+      M(rx, ry, r0 * (t >= 1.4 ? 1.14 : 1), 'rubber'); M(x, y, r, 'clay');
+      pop(bx, by - 22, '+40', theme.orange, (t - 0.7) / 0.9); pop(restX - r0, restY - 14, '+96', theme.orange, (t - 1.4) / 0.9);
+      cap(hits ? 'Each hit scores, and both marbles grow' : 'Hit things\u2026');
+    } else if (kind === 'target') {
+      const x0 = 24, w = W - 48, y = H * 0.48, steps = [0.3, 0.85, 1.4, 1.95], fill = steps.reduce((a, s2) => a + 0.25 * ease((t - s2) / 0.35), 0), done = t > 2.3;
+      g.fillStyle = theme.fill; rrect(g, x0, y, w, 8, 4); g.fill();
+      g.fillStyle = done ? theme.green : theme.blue; rrect(g, x0, y, Math.max(8, w * fill), 8, 4); g.fill();
+      txtNeon(g, fmt(Math.round(2750 * Math.min(1, fill))), W / 2, y - 26, 26, 'center', theme.ink, null, 700);
+      steps.forEach((s2, i) => pop(x0 + w * (i + 1) * 0.25 - 10, y - 4, '+' + [640, 820, 590, 700][i], theme.orange, (t - s2) / 0.8));
+      txtNeon(g, done ? 'Target met \u2713' : 'of 2,750', W / 2, y + 26, 14, 'center', done ? theme.green : theme.ink2, null, 600);
+      cap('Reach the target before your marbles stop');
+    } else if (kind === 'tap') {
+      const r = 9, kickT = 1.4; let sdist;
+      if (t < kickT) sdist = 170 * (1 - Math.exp(-1.6 * t)) / 1.6; else { const s0 = 170 * (1 - Math.exp(-1.6 * kickT)) / 1.6; sdist = s0 + 260 * (1 - Math.exp(-1.4 * (t - kickT))) / 1.4; }
+      let x = 20 + sdist; if (x > W - r) x = 2 * (W - r) - x;
+      M(x, H * 0.55, r, 'clay', [], sdist / r);
+      if (t > kickT - 0.25 && t < kickT + 0.6) { finger(W * 0.72, H * 0.3, 1 - Math.max(0, t - kickT) / 0.6); ring(W * 0.72, H * 0.3, (t - kickT) / 0.5, theme.blue, 26); }
+      pop(x, H * 0.55 - 10, 'Kick!', theme.blue, (t - kickT) / 0.9);
+      const left = t < kickT ? 2 : 1; for (let i = 0; i < 2; i++) { g.fillStyle = i < left ? theme.blue : theme.fill; circle(g, W - 36 + i * 13, 16, 4.5); }
+      cap('A quick tap speeds rolling marbles up');
+    } else if (kind === 'bag') {
+      const cx = W / 2, cy = H * 0.5, meet = 0.9, r = 11;
+      const k = ease(Math.min(1, t / meet)), ax = lerp(24, cx - r, k), bx2 = lerp(W - 24, cx + r, k);
+      const smalls = [[cx - 80, cy - 34], [cx + 86, cy - 30], [cx + 30, cy + 40]];
+      for (const [sx, sy] of smalls) M(sx, sy, 7, 'clay');
+      if (t > meet) {
+        const kk = (t - meet) / 1.1;
+        ring(cx, cy, kk, theme.purple, 60);
+        if (kk < 0.7) { g.strokeStyle = theme.blue; g.lineWidth = 2; for (const [sx, sy] of smalls) { g.beginPath(); g.moveTo(cx, cy); for (let i = 1; i < 5; i++) { const q = i / 5; g.lineTo(lerp(cx, sx, q) + (Math.sin(i * 9.1 + t * 40) * 5), lerp(cy, sy, q) + (Math.cos(i * 7.3 + t * 40) * 5)); } g.lineTo(sx, sy); g.stroke(); } }
+        g.globalAlpha = Math.min(1, kk * 3); txtNeon(g, 'STORM CELL', cx, 18, 16, 'center', theme.purple, null, 700); g.globalAlpha = 1;
+      }
+      M(ax, cy, r, 'clay', ['spark']); M(bx2, cy, r, 'glass', ['clone']);
+      cap('Spark + Clone meet \u2192 lightning combo');
+    } else if (kind === 'star') {
+      const sp = 44, n = 4, x0 = W / 2 - (n - 1) * sp / 2, y = H * 0.5, mats = ['clay', 'steel', 'rubber', 'glass'];
+      for (let i = 0; i < n; i++) { g.fillStyle = theme.fill; circle(g, x0 + i * sp, y, 19); }
+      g.strokeStyle = theme.blue; g.lineWidth = 2.5; g.beginPath(); g.arc(x0, y, 19, 0, TAU); g.stroke();
+      const k = ease((t - 0.5) / 1.3), dragging = t > 0.5 && t < 1.8, done = t >= 1.8;
+      const order = done ? ['rubber', 'clay', 'steel', 'glass'] : mats;
+      for (let i = 0; i < n; i++) { if (dragging && order[i] === 'rubber') continue; M(x0 + i * sp, y, 14, order[i], order[i] === 'rubber' ? ['bomb'] : []); }
+      if (dragging) { const px = lerp(x0 + 2 * sp, x0, k), py = y - Math.sin(k * Math.PI) * 26; M(px, py - 4, 16, 'rubber', ['bomb']); finger(px + 8, py + 12, 1); }
+      cap(done ? 'It\u2019s up next' : 'Drag a marble to the first spot');
+    }
+  },
+};
 function showHelp(back, first) {
   UI.back = back;
-  const step = (icon, col, title, body) => '<div class="hrow">' + ico(icon, col) + '<div class="grow"><div class="nm">' + title + '</div><div class="ds">' + body + '</div></div></div>';
+  const step = (icon, col, title, body) => '<div class="hrow tap" data-act="demo" data-arg="' + icon + '">' + ico(icon, col) + '<div class="grow"><div class="nm">' + title + '</div><div class="ds">' + body + '</div></div><span class="chev">›</span></div>';
   UI.show('help', '<div class="col"><h2>How to play</h2><div class="group">' +
     step('fling', 'var(--blue)', 'Fling', 'Touch the board, pull back, let go.') +
     step('hit', 'var(--orange)', 'Collide', 'Every hit scores. Marbles grow as they hit.') +
     step('target', 'var(--green)', 'Beat the target', 'Fill the bar before your marbles stop.') +
     step('tap', 'var(--purple)', 'Kick', 'Quick tap to speed things up. 2 per room.') +
-    step('bag', 'var(--red)', 'Upgrade', 'Shop every 3 rooms. Boss every 5th.') +
-    '</div><p class="center muted small">Tip: drag a marble to the first spot in the tray to throw it next.</p>' +
+    step('bag', 'var(--red)', 'Combos', 'Upgrades that meet in a hit set off combos.') +
+    step('star', 'var(--indigo)', 'Pick your marble', 'Drag one to the first spot to throw it next.') +
+    '</div><p class="center muted small">Tap a step to see it in action.</p>' +
     '<div class="spacer"></div><div class="foot"><button class="btn primary" data-act="' + (first ? 'helpGo' : 'back') + '">' + (first ? 'Let\u2019s go' : 'Got it') + '</button></div></div>');
 }
 function showSettings(back) {
@@ -3151,7 +3273,7 @@ function showPick(viewOnly, backFn) {
     const valid = viewOnly || run.validTarget(p.card, m);
     const self = !viewOnly && p.card.kind === 'engrave' && valid && comboPartners(p.card.eng).some(x => m.eng.indexOf(x.p) >= 0);
     return '<button class="tile ' + (viewOnly ? 'view' : '') + '" ' + (valid ? '' : 'disabled') + (viewOnly ? '' : ' data-act="target" data-arg="' + i + '"') + '>' + prevCanvas(m.mat, m.eng) +
-      '<div>' + (sizeOf(m).name ? sizeOf(m).name + ' ' : '') + MATS[m.mat].name + '</div><div class="lv">LV ' + m.lvl + (viewOnly && run.phase === 'play' && run.hand.indexOf(m) >= 0 ? ' · IN HAND' : '') + '</div>' + (self ? '<div class="chint"><span class="yes">⚡ Combo</span></div>' : '') + '<div class="muted" style="font-size:14px;line-height:1.1">' + (m.eng.map(e => ENGS[e].name).join(' + ') || '—') + '</div></button>';
+      '<div>' + (sizeOf(m).name ? sizeOf(m).name + ' ' : '') + MATS[m.mat].name + '</div><div class="lv">LV ' + m.lvl + (m.lvl > 1 ? ' · ×' + (1 + 0.5 * (m.lvl - 1)) + ' pts' : '') + (viewOnly && run.phase === 'play' && run.hand.indexOf(m) >= 0 ? ' · IN HAND' : '') + '</div>' + (self ? '<div class="chint"><span class="yes">⚡ Combo</span></div>' : '') + '<div class="muted" style="font-size:14px;line-height:1.1">' + (m.eng.map(e => ENGS[e].name).join(' + ') || '—') + '</div></button>';
   }).join('');
   const charms = run.charms.length ? '<h3>Charms</h3><div class="list">' + run.charms.map(c => '<div class="li"><div class="badge sm">' + CHARMS[c].glyph + '</div><div class="grow"><div class="nm">' + CHARMS[c].name + '</div><div class="ds">' + CHARMS[c].desc + '</div></div></div>').join('') + '</div>' : '';
   let foot;
@@ -3350,6 +3472,7 @@ async function shareRun() {
 document.getElementById('ui').addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || el.disabled || !el.dataset.act) return;
+  if (el.dataset.act === 'demo') { Platform.haptics.play(HAPTIC.tap); HelpDemo.toggle(el, el.dataset.arg); return; }
   Sound.unlock(); Sound.ui(); Platform.haptics.play(HAPTIC.tap);
   handleAct(el.dataset.act, el.dataset.arg);
 });
@@ -3537,6 +3660,7 @@ const App = {
     showPick(true, () => { UI.hide(); this.paused = false; });
   },
   selectMarble(i) {
+    this.tip = null;
     const run = this.run; if (!run || !run.hand[i]) return;
     if (i === 0 || run.act({ a: 'select', i })) { Sound.card(); Platform.haptics.play(HAPTIC.tap); UI.marbleTip(run.hand[0]); }
   },
@@ -3618,7 +3742,7 @@ function startRun(mode, seed, opts) {
   App.bestForMode = App.rival ? App.rival.s : daily ? (SAVE.daily.date === todayStr() ? SAVE.daily.best : 0) : SAVE.stats.bestScore;
   App.challenges = pickChallenges(daily); App.chalDone = {}; App.goalShards = 0; App.overInfo = null;
   App.ini = (SAVE.initials || 'AAA').padEnd(3, 'A').slice(0, 3).split('');
-  App.state = 'play'; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.pbShown = false; App.zoom = null; App.tapHint = 0; App.bufferedFling = null;
+  App.state = 'play'; App.tip = null; App.paused = false; App.countdown = 0; App.cdWaiting = false; App.acc = 0; App.slowT = App.stopT = 0; App.ff = false; App.pbShown = false; App.zoom = null; App.tapHint = 0; App.bufferedFling = null;
   UI.hide(); UI.closeModal(); UI.hideCountdown();
   Sound.Music.setMode('play'); Platform.wake.request();
   handleEvents(App.run, false);
