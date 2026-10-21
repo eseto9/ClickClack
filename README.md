@@ -28,7 +28,7 @@ The whole game is one offline HTML file ([index.html](index.html)) with no asset
 
 ## How a run works
 
-1. You start with **4 Clay marbles and a Clay Shooter**. Each room deals 5 at random from your bag (the bag icon under the board shows how many you own).
+1. You start with **4 Clay marbles (one with a random engraving) and a Clay Shooter**. Each room deals 5 at random from your bag (the bag icon under the board shows how many you own).
 2. Drag the marble you want to the first spot in the tray, then fling it. Marbles that stop stay on the table as targets for later throws.
 3. Hit the target score to clear the room, then **pick your path**: a Standard room, or one special room type (Gold, Calm, Elite or Wild).
 4. The shop opens after every third room (rooms 2, 5, 8...). Coins are tight: expect to afford one or two things per visit. After other rooms there's sometimes a free powerup (1 of 3; always after room 1 and boss rooms).
@@ -42,7 +42,7 @@ Every run uses a random seed, and every engraving, material and charm can show u
 
 **Upgrades:** common, rare and legendary. 6 materials, 14 engravings (including the legendary Black Hole and Split Shot) and 14 charms (including the legendary Overcharge and Lucky Seven).
 
-**Combos:** 12 named combos (Storm Cell, Chain Reaction, Event Horizon...) trigger when two engravings meet in one collision. Discovered combos fill a codex under Records.
+**Combos (the heart of a run):** 28 named combos fire when two engravings meet in one collision, either on the two marbles that hit or both on one marble. Each has its own effect: lightning that chains to nearby marbles, explosions, pulls, freezes, new bumpers, clones, speed bursts, Chaos surges or coins. Upgrade offers lean toward engravings that combo with what's in your bag, and every card and shop item shows which engravings it pairs with (highlighted when you already own one). Discovered combos and what they do fill a codex under Records.
 
 **Arcade board:** big bumpers that light up (light them all once per room for a ×2 Frenzy), ×2 and ×3 gates, boost pads, vortexes, multiball orbs and collectible stars.
 
@@ -54,7 +54,7 @@ Every run uses a random seed, and every engraving, material and charm can show u
 
 ## Settings
 
-Sound and music start **muted**; tap the Sound chip on the title screen or use Settings to turn them on. Settings also has haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, themes (Auto follows your phone's light/dark mode, Light, Dark, High Contrast) and Assist mode. Hard mode is a toggle on the title screen.
+Sound and music start **muted**; turn them on in Settings. Settings also has Hard mode, haptics, reduce motion, low power mode (30 fps), aim sensitivity, pause button side, themes (Auto follows your phone's light/dark mode, Light, Dark, High Contrast) and Assist mode.
 
 ## Technical notes
 
