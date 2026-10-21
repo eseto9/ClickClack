@@ -293,6 +293,12 @@ h3{font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);letter-
 .aw .ad{color:var(--muted);font-size:13px;line-height:1.25}
 .seg.wide{width:100%}.seg.wide button{flex:1 1 0;min-width:0;padding:0 2px;font-size:14px;min-height:36px}
 .empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 10px}
+.titlehead{display:flex;flex-direction:column;align-items:center;gap:2px}
+.titlehead h1.logo{font-size:min(17vw,72px);margin-top:4px;line-height:1}
+.titlehead .tag{padding:2px 8px;font-size:16px}
+.tbest{font-size:14px;font-weight:600;color:var(--muted);background:var(--card);border-radius:999px;padding:3px 12px;box-shadow:var(--shadow)}
+.titlefoot{display:flex;flex-direction:column;gap:12px}
+#screen.see{background:none;padding-bottom:calc(var(--sab) * .5 + 10px)}
 #bankBtn:active,#ffBtn:active{transform:translateX(-50%);opacity:.7;box-shadow:0 6px 20px rgba(0,0,0,.18)}
 </style>
 </head>
@@ -1861,6 +1867,13 @@ function viewportSize() {
   }
   return [w, h];
 }
+// On the title screen the demo table sits in the gap between the heading and the buttons.
+let TitleBox = null;
+function measureTitle() {
+  const h = document.querySelector('#screen .titlehead'), f = document.querySelector('#screen .titlefoot');
+  TitleBox = h && f ? { top: h.getBoundingClientRect().bottom, bottom: f.getBoundingClientRect().top } : null;
+  computeLayout();
+}
 function computeLayout() {
   const [vw, vh] = viewportSize();
   canvas.style.height = vh + 'px'; const uiEl = document.getElementById('ui'); if (uiEl) uiEl.style.height = vh + 'px';
@@ -1881,6 +1894,11 @@ function computeLayout() {
   L.aw = T.W * L.s; L.ah = T.H * L.s;
   L.ax = L.colX + (L.colW - L.aw) / 2;
   L.ay = availTop + Math.max(0, (availH - L.ah) * 0.5);
+  if (TitleBox && TitleBox.bottom - TitleBox.top > 120) {
+    const aT = TitleBox.top + 10, aH = TitleBox.bottom - 10 - aT;
+    L.s = Math.max(0.25, Math.min(availW / T.W, aH / T.H)); L.aw = T.W * L.s; L.ah = T.H * L.s;
+    L.ax = L.colX + (L.colW - L.aw) / 2; L.ay = aT + (aH - L.ah) / 2;
+  }
   L.trayY = Math.min(trayBottom - L.trayH, L.ay + L.ah + 6);
   L.trayY = Math.max(L.trayY, L.ay + L.ah + 4);
   canvas.width = Math.round(vw * L.dpr); canvas.height = Math.round(vh * L.dpr);
@@ -2847,6 +2865,7 @@ const UI = {
   setVis(el, on) { const k = el.id; if (this.vis[k] === on) return; this.vis[k] = on; el.classList.toggle('hidden', !on); },
   screenOpen() { return !this.scr.classList.contains('hidden') || !this.modal.classList.contains('hidden'); },
   show(name, html, see) {
+    if (name !== 'title' && TitleBox) { TitleBox = null; this.name = name; computeLayout(); }
     this.name = name; this.scr.className = (see ? 'see ' : '') + 'fadein'; this.scr.innerHTML = html; this.scr.scrollTop = 0;
     this.paintPreviews(this.scr);
     const first = this.scr.querySelector('.btn.primary');
@@ -2939,14 +2958,15 @@ function showTitle() {
   App.state = 'title'; UI.back = null;
   const s = SAVE.stats;
   UI.show('title', '<div class="col">' +
-    '<h1 class="logo">CLACK</h1><div class="tag">Fling. Collide. Beat the target.</div>' +
-    '<div class="chips"><div class="chip">BEST ' + fmt(s.bestScore) + '</div></div>' +
+    '<div class="titlehead"><h1 class="logo">CLACK</h1><div class="tag">Fling. Collide. Beat the target.</div>' +
+    '<div class="tbest">Best ' + fmt(s.bestScore) + '</div></div>' +
     '<div class="spacer"></div>' +
-    '<div class="chips"><button class="chip" data-act="toggleSound">' + (SAVE.settings.sound || SAVE.settings.music ? '♪ Sound: ON' : '♪ Sound: OFF') + '</button><button class="chip" data-act="toggleHard">Hard: ' + (SAVE.settings.hard ? 'ON' : 'OFF') + '</button>' +
+    '<div class="titlefoot"><div class="chips"><button class="chip" data-act="toggleSound">' + (SAVE.settings.sound || SAVE.settings.music ? '♪ Sound: ON' : '♪ Sound: OFF') + '</button><button class="chip" data-act="toggleHard">Hard: ' + (SAVE.settings.hard ? 'ON' : 'OFF') + '</button>' +
     (SAVE.settings.assist ? '<div class="chip">Assist ON</div>' : '') + '</div>' +
     '<button class="btn primary" data-act="play">▶ PLAY</button>' +
-    '<div class="row"><button class="btn small" data-act="help">How to play</button><button class="btn small" data-act="records">Records</button><button class="btn small" data-act="settings">Settings</button></div>' +
+    '<div class="row"><button class="btn small" data-act="help">How to play</button><button class="btn small" data-act="records">Records</button><button class="btn small" data-act="settings">Settings</button></div></div>' +
     '</div>', true);
+  measureTitle();
   Sound.Music.setMode('menu');
 }
 
@@ -3628,7 +3648,7 @@ function attractUpdate(dt) {
   handleEvents(r, true);
 }
 function onResize() {
-  computeLayout();
+  if (TitleBox) measureTitle(); else computeLayout();
   const landscapePhone = L.vw > L.vh && Platform.isTouch && L.vh < 520;
   UI.rot.classList.toggle('hidden', !landscapePhone);
   if (landscapePhone) pauseGame();
